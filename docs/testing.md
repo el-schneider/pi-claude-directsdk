@@ -91,3 +91,6 @@ npm run build
 These commands check types and compilation, not runtime behavior. Release CI runs only those checks. Runtime verification stays local because CI is not the user’s Pi installation and has no approved subscription credentials.
 
 The harness does not yet exercise an in-process `/reload`, forced subprocess stalls, cancellation, or an explicit tool round trip. Do not claim those behaviors are verified by these scenarios.
+
+
+Separate temporary Linux supervisor checks verified forced write/read/exit stalls and cancellation using real subprocesses and process groups. A three-request installed-Pi check verified cache reuse after restarting Pi. These checks are recorded in [transport-measurements.md](transport-measurements.md#linux-lifecycle-and-cross-restart-verification); they are not additional scenarios in the supported harness.

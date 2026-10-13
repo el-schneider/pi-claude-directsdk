@@ -123,10 +123,43 @@ TypeScript checking, whitespace checking, and the existing offline startup verif
 
 Subprocess writes and child-closure waits now have request-timeout bounds. Read timeouts remove the correct waiter and terminate the child. Cancellation rejects pending reads and writes, and discovery cleanup releases its server and temporary directory even after an exit-observation failure. The completion gate before executable tool calls is unchanged.
 
-Model-request children now use a persistent, empty, private cache directory rather than a new temporary directory per Pi process. See [architecture.md](architecture.md#native-working-directory-srcchild-cwdts) for paths and validation. This removes a changing directory path from native context, but cross-restart API cache reuse remains unmeasured.
+Model-request children now use a persistent, empty, private cache directory rather than a new temporary directory per Pi process. See [architecture.md](architecture.md#native-working-directory-srcchild-cwdts) for paths and validation. This removes a changing directory path from native context. The Linux cross-restart verification below measured successful reuse.
 
 The supported `warm` scenario now reproduces the three-turn same-process measurement through installed Pi. It has an explicit three-request budget, private configuration and session cleanup, no-tool enforcement, and a no-model-request dry run. See [testing.md](testing.md#same-process-warm-cache-measurement).
 
 TypeScript checking, compilation, Python and observer syntax checks, offline startup, and RPC dry-run preparation passed. A complete-session loopback-only refusal probe completed 86 historical acknowledgments and reached the deliberately blocked upstream. Both native children exited, and the persistent child directory stayed empty with mode `0700`. That probe verifies replay and failure cleanup, not successful generation. Its model call failed as expected; no paid request was made.
 
-Forced backpressure, hung-child deadlines, cancellation, Windows behavior, and successful paid warm turns after these lifecycle changes remain unverified. The earlier measured 99.59% and 99.71% warm-cache shares are from before these subsequent changes.
+The earlier measured 99.59% and 99.71% warm-cache shares are from before these subsequent changes. Subsequent Linux verification covered deadlines, cancellation, and successful cache reuse across a Pi restart, as described below.
+
+
+## Linux lifecycle and cross-restart verification
+
+The background verification completed successfully in 19.7 seconds. It used temporary verification programs outside the repository and exactly three approved paid requests.
+
+### Forced stalls and cancellation
+
+Temporary Node child programs exercised the public subprocess supervisor with real Linux pipes and process groups. They did not emulate model responses or contact an API.
+
+- Stalled stdin writes, silent stdout reads, and child-exit waits timed out with a 300 ms supervisor limit.
+- Whole-case durations, including child startup and cleanup, were 409, 393, and 405 ms, respectively.
+- Cancellation during a blocked write, pending read, and exit wait completed each whole case in 103, 101, and 103 ms.
+- Each case confirmed that the parent and its descendant were no longer running.
+- The pre-fix supervisor lacked the write and exit deadlines. Those two regression controls reached the independent 800 ms safety guard instead, then were terminated.
+
+These checks verify the Linux supervisor's timeout and cancellation behavior. They are not a complete Pi tool-execution cancellation test or a dedicated relay late-cleanup test.
+
+### Cache reuse after restarting Pi
+
+One installed Pi RPC process forked a private snapshot and completed two requests. It then exited. A second Pi RPC process resumed the saved private session and completed the third request. Both processes used the same copied agent directory, working folder, model, and empty native working directory. Auto-retry, auto-compaction, idle warming, and tool execution were disabled for verification.
+
+| Request | Phase | Cache-read tokens | Cache-write tokens | Cache-read share | HTTPS connection reused | RPC prompt to settled |
+|---|---|---:|---:|---:|---|---:|
+| 1 | Cold | 2,951 | 194,728 | 1.49% | No | 3,347.356 ms |
+| 2 | Same-process warm | 197,137 | 610 | 99.69% | Yes | 5,193.948 ms |
+| 3 | After Pi restart | 197,491 | 310 | 99.84% | No | 3,134.302 ms |
+
+All three requests succeeded and admitted exactly one upstream request each. Pi system-prompt and tool-definition hashes were identical across the restart. Replay prepared 205, 207, and 209 frames, with 102, 103, and 104 historical acknowledgments. Request bodies were 492,536, 492,868, and 493,155 bytes.
+
+The restarted process opened a new HTTPS connection but still read 99.84% of input from the API cache. This verifies that prompt-cache reuse survives a Pi restart under these stable inputs; it does not depend on keeping the old connection or Pi process alive.
+
+Cache hits do not guarantee lower latency. The same-process warm request waited 3,944.553 ms for response headers, despite 99.69% cache-read share. These three timings are not a controlled latency comparison. Legitimate instruction or tool changes, cache lifetime expiry, and upstream eviction can still prevent reuse.

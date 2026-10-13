@@ -77,7 +77,7 @@ Native model-request children share an empty, persistent directory. Its path rem
 
 On POSIX, the provider verifies that its cache root and child directory belong to the current effective user and have mode `0700`. It rejects symlinks and nonempty child directories instead of reading unexpected project instructions or deleting files. Windows uses the access controls inherited from the user's cache parent. Relative cache-directory settings fail with the setting name and a remedy.
 
-The first request after this directory change can miss a previously cached native prefix. A stable path removes this source of cache invalidation; legitimate Pi prompt and tool changes still affect reuse. Cross-restart API cache reuse has not yet been measured.
+The first request after this directory change can miss a previously cached native prefix. A stable path removes this source of cache invalidation; legitimate Pi prompt and tool changes still affect reuse. Linux verification resumed the same session in a new Pi process and measured 99.84% cache-read share with stable Pi prompt and tool hashes. See [transport-measurements.md](transport-measurements.md#linux-lifecycle-and-cross-restart-verification).
 
 ### Stream conversion (`src/stream.ts`)
 
