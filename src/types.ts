@@ -24,8 +24,13 @@ export interface NativeUsage {
   [key: string]: unknown;
 }
 
+export interface NativeCacheControl {
+  type: "ephemeral";
+  ttl: "5m" | "1h";
+}
+
 /** One native content block. Only the variants below are supported. */
-export type NativeContentBlock =
+export type NativeContentBlock = (
   | { type: "text"; text: string }
   | { type: "thinking"; thinking: string; signature: string }
   | { type: "tool_use"; id: string; name: string; input: unknown }
@@ -35,7 +40,8 @@ export type NativeContentBlock =
       tool_use_id: string;
       content: string | Array<{ type: string; [key: string]: unknown }>;
       is_error?: boolean;
-    };
+    }
+) & { cache_control?: NativeCacheControl };
 
 /** One native assistant message, either replayed or captured. */
 export interface NativeAssistantMessage {

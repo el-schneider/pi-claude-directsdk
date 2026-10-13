@@ -23,6 +23,7 @@ import { replayError } from "./errors.js";
 import { toolPrefixedName } from "./request.js";
 import {
   NativeAssistantMessage,
+  NativeCacheControl,
   NativeContentBlock,
   NativeFrame,
   deepClone,
@@ -155,6 +156,7 @@ function toNativeImage(data: string, mimeType: string): NativeContentBlock {
 export function prepareHistory(
   messages: Message[],
   allowedToolNames?: Set<string>,
+  cacheControl?: NativeCacheControl,
 ): ReplayOutput {
   const frames: NativeFrame[] = [];
   const nativeIdPattern = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -318,6 +320,24 @@ export function prepareHistory(
     const frame = frames[i];
     if (frame?.type === "user") {
       frame.shouldQuery = false;
+    }
+  }
+  if (cacheControl) {
+    // Cache historical Pi content, not the final user frame: the CLI inserts
+    // transient reminders inside that final frame. On the next turn this
+    // historical user/tool-result content is replayed unchanged, so the
+    // API can find this prefix while searching back from the new breakpoint.
+    // One extra marker leaves room for the CLI's two system markers and tail
+    // marker. Never stamp signed thinking or change the transcript itself.
+    anchor: for (let i = frames.length - 2; i >= 0; i--) {
+      const frame = frames[i];
+      if (frame?.type !== "user") continue;
+      for (let j = frame.message.content.length - 1; j >= 0; j--) {
+        const block = frame.message.content[j];
+        if (!block || (block.type === "text" && block.text.trim() === "")) continue;
+        frame.message.content[j] = { ...block, cache_control: { ...cacheControl } };
+        break anchor;
+      }
     }
   }
   return { frames };

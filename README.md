@@ -93,6 +93,11 @@ The request transport still loads on the first Claude request. See [docs/startup
 | `CLAUDE_DIRECTSDK_COMMAND` | Override the `claude` executable path. |
 | `CLAUDE_DIRECTSDK_CONFIG_DIR` | Point at a logged-in CLI config directory. |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Supply a token from `claude setup-token` in the environment Pi runs in. |
+| `PI_DIRECTSDK_PROMPT_HASHES` | Set to `1` to add SHA-256 hashes of the provider-supplied system prompt and tool definitions to message diagnostics. Unset it or set it to `0` to disable hashes. |
+
+Success and failure diagnostics include request-phase timings, replay counts, upstream request-body bytes, and cache-read share. Unobserved milestones and unavailable cache-read shares are `null`. Milestone times are elapsed milliseconds from call start; durations are separate intervals and are not additive. The spawn-to-replay interval includes CLI startup, and first response data is not necessarily the first generated token.
+
+Cache-read share measures token reuse, not subscription allowance deductions. Prefix hashes cover the Pi-supplied system prompt and tool definitions; they do not detect system-prompt changes added by Claude Code. Diagnostics store hashes, not the prompt or tool definitions.
 
 See [docs/troubleshooting.md](docs/troubleshooting.md) for login and environment errors.
 
@@ -115,6 +120,7 @@ Per-model cost metadata comes from [Anthropic’s pricing documentation](https:/
 | [docs/architecture.md](docs/architecture.md) | Request lifecycle, model routing, tool transport, admission relay. |
 | [docs/startup.md](docs/startup.md) | Cache-only initialization and lazy loading. |
 | [docs/testing.md](docs/testing.md) | Installed-Pi harness, paid scenarios, and complete-session replay. |
+| [docs/transport-measurements.md](docs/transport-measurements.md) | Timing baseline, verified warm-cache reuse, and measurement limits. |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Missing CLI, logged-out CLI, conflicting environment. |
 
 ## Acknowledgments

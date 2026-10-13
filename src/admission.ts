@@ -11,12 +11,14 @@
  * native.
  */
 
-import { IncomingMessage, Server, ServerResponse, createServer } from "node:http";
+import { ClientRequest, IncomingMessage, Server, ServerResponse, createServer } from "node:http";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { Socket } from "node:net";
 import { NativeAssistantMessage, NativeUsage, deepClone, isRecord } from "./types.js";
+
+import { upstreamAgent } from "./upstream-agent.js";
 
 const ERROR_BODY_CAP = 64 * 1024;
 const REQUEST_BODY_CAP = 512 * 1024 * 1024;
@@ -212,6 +214,14 @@ export class AdmissionRelay {
   errorBody = Buffer.alloc(0);
   /** Fired when the admitted upstream response headers arrive. */
   onUpstreamResponse: ((status: number, headers: Record<string, string>) => void) | null = null;
+  /** Fired when the request is handed to the upstream HTTP client. */
+  onUpstreamRequestStarted: (() => void) | null = null;
+  /** Fired on the first upstream response data chunk. */
+  onUpstreamFirstData: (() => void) | null = null;
+  /** Fired when the upstream response ends. */
+  onUpstreamResponseEnded: (() => void) | null = null;
+  requestBodyBytes: number | null = null;
+  upstreamConnectionReused: boolean | null = null;
 
   private server: Server;
   private readonly target: UpstreamTarget;
@@ -219,6 +229,8 @@ export class AdmissionRelay {
   private readonly route: string;
   private cancelled = false;
   private sockets = new Set<Socket>();
+  private activeUpstream: ClientRequest | null = null;
+  private closing: Promise<void> | null = null;
   private resolveReady!: () => void;
   private rejectReady!: (error: Error) => void;
 
@@ -282,6 +294,7 @@ export class AdmissionRelay {
 
   abort(): void {
     this.cancelled = true;
+    this.activeUpstream?.destroy(new Error("Admission relay aborted"));
     for (const socket of this.sockets) {
       try {
         socket.destroy();
@@ -292,10 +305,13 @@ export class AdmissionRelay {
   }
 
   close(): Promise<void> {
-    this.abort();
-    return new Promise((resolve) => {
-      this.server.close(() => resolve());
-    });
+    if (!this.closing) {
+      this.abort();
+      this.closing = new Promise((resolve, reject) => {
+        this.server.close((error) => error ? reject(error) : resolve());
+      });
+    }
+    return this.closing;
   }
 
   private track(socket: Socket): void {
@@ -353,7 +369,6 @@ export class AdmissionRelay {
       return;
     }
     this.used = true;
-    this.track(req.socket);
 
     let body: Buffer;
     try {
@@ -377,8 +392,6 @@ export class AdmissionRelay {
       } catch {
         // Child is gone; the failure field carries the diagnosis.
       }
-    } finally {
-      this.sockets.delete(req.socket);
     }
   }
 
@@ -388,6 +401,34 @@ export class AdmissionRelay {
     body: Buffer,
   ): Promise<void> {
     return new Promise((resolve, reject) => {
+      if (this.cancelled || res.destroyed) {
+        reject(new Error("Admission relay closed before forwarding"));
+        return;
+      }
+      let settled = false;
+      let responseEnded = false;
+      const onTimeout = (): void => {
+        upstream.destroy(new Error("Upstream request timed out"));
+      };
+      const finish = (error?: Error): void => {
+        if (settled) return;
+        settled = true;
+        upstream.removeListener("timeout", onTimeout);
+        req.removeListener("aborted", onAborted);
+        res.removeListener("close", onDownstreamClose);
+        if (this.activeUpstream === upstream) this.activeUpstream = null;
+        if (error) reject(error);
+        else resolve();
+      };
+      const onAborted = (): void => {
+        upstream.destroy(new Error("Native request aborted"));
+      };
+      const onDownstreamClose = (): void => {
+        if (!responseEnded) {
+          upstream.destroy(new Error("Native response closed before upstream completion"));
+        }
+      };
+      this.requestBodyBytes = body.length;
       const headers: Record<string, string | string[]> = {};
       for (const [key, value] of Object.entries(req.headers)) {
         if (value === undefined || HOP_BY_HOP.has(key.toLowerCase())) {
@@ -404,6 +445,7 @@ export class AdmissionRelay {
           port: this.target.port,
           path: `${this.target.path}/v1/messages`,
           method: "POST",
+          agent: upstreamAgent(this.target.scheme),
           headers: { ...headers, "content-length": body.length },
           timeout: this.timeoutMs,
         },
@@ -435,11 +477,15 @@ export class AdmissionRelay {
             }
             res.writeHead(this.status ?? 502, passthrough);
           } catch (error) {
-            upstreamRes.destroy();
-            reject(error);
+            upstream.destroy(error instanceof Error ? error : new Error(String(error)));
             return;
           }
+          let receivedData = false;
           upstreamRes.on("data", (chunk: Buffer) => {
+            if (!receivedData) {
+              receivedData = true;
+              this.onUpstreamFirstData?.();
+            }
             if (this.status === 200) {
               try {
                 this.capture.feed(chunk);
@@ -460,29 +506,31 @@ export class AdmissionRelay {
             }
           });
           upstreamRes.on("end", () => {
+            responseEnded = true;
+            // Relinquish request ownership before callbacks or cleanup can run.
+            finish();
+            this.onUpstreamResponseEnded?.();
             try {
               res.end();
             } catch {
               // Child went away; capture still holds the diagnosis.
             }
-            resolve();
           });
-          upstreamRes.on("error", reject);
+          upstreamRes.on("error", (error) => upstream.destroy(error));
+          upstreamRes.on("close", () => {
+            if (!responseEnded) upstream.destroy(new Error("Upstream response ended prematurely"));
+          });
         },
       );
-      upstream.on("socket", (socket: Socket) => {
-        this.track(socket);
+      this.activeUpstream = upstream;
+      upstream.once("socket", () => {
+        this.upstreamConnectionReused = upstream.reusedSocket;
       });
-      upstream.on("timeout", () => {
-        upstream.destroy(new Error("Upstream request timed out"));
-      });
-      upstream.on("error", reject);
-      req.on("aborted", () => {
-        upstream.destroy();
-      });
-      res.on("close", () => {
-        upstream.destroy();
-      });
+      upstream.once("timeout", onTimeout);
+      upstream.on("error", finish);
+      req.once("aborted", onAborted);
+      res.once("close", onDownstreamClose);
+      this.onUpstreamRequestStarted?.();
       upstream.end(body);
     });
   }

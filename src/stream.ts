@@ -22,6 +22,7 @@ import {
 import type {
   Api,
   AssistantMessage,
+  AssistantMessageDiagnostic,
   AssistantMessageEventStream,
   JsonObject,
   Model,
@@ -31,6 +32,11 @@ import type {
   TranscriptContext,
 } from "@earendil-works/pi-ai/compat";
 import { AdmissionRelay } from "./admission.js";
+import {
+  PREFIX_HASH_ENV,
+  RequestMeasurements,
+  promptHashesEnabled,
+} from "./measurements.js";
 import {
   DirectSdkError,
   cancelledError,
@@ -51,6 +57,7 @@ import {
 import {
   buildArgv,
   buildChildEnv,
+  replayCacheControl,
   buildRequestBody,
   checkEnvConflicts,
   toolBareName,
@@ -215,6 +222,7 @@ async function executeCall(
   stream: AssistantMessageEventStream,
   deps: CallDeps,
 ): Promise<void> {
+  const measurements = new RequestMeasurements();
   const output: AssistantMessage = {
     role: "assistant",
     content: [],
@@ -226,26 +234,58 @@ async function executeCall(
     timestamp: Date.now(),
   };
   let started = false;
+  let relay: AdmissionRelay | null = null;
+  let child: ChildHandle | null = null;
+  let requestDir: string | null = null;
+  let nativeModelId: string | null = null;
+  let cliAvailable = false;
+  let nativeCostUsd = -1;
+  let observedUsage: NativeUsage | undefined;
+  let abortRelay: (() => void) | undefined;
+
+  const metaDiagnostic = (): AssistantMessageDiagnostic => {
+    return {
+      type: "pi-claude-directsdk/meta",
+      timestamp: Date.now(),
+      details: {
+        nativeModel: nativeModelId,
+        requestId: relay?.requestId ?? "",
+        upstreamRequests: relay?.used ? 1 : 0,
+        blockedRequests: relay?.denied ?? 0,
+        nativeCostUsd,
+        nativeCostNote: "estimate, not subscription charge",
+        cliAvailable,
+        measurements: measurements.toJson(
+          relay?.requestBodyBytes ?? null,
+          relay?.capture.message?.usage,
+          observedUsage,
+          relay?.upstreamConnectionReused ?? null,
+        ),
+      },
+    };
+  };
   const fail = (error: unknown): void => {
+    if (child?.exitInfo) {
+      measurements.mark("childExited");
+    }
+    measurements.mark("completionPublished");
     const aborted = isCancelled(error) || options.signal?.aborted === true;
     // A failed or interrupted request is never reported as free: keep any
     // usage captured before the failure instead of zeroing it.
     output.stopReason = aborted ? "aborted" : "error";
     output.errorMessage =
       error instanceof Error ? error.message : JSON.stringify(error);
-    if (!started) {
-      stream.push({ type: "error", reason: output.stopReason, error: output });
-      stream.end();
-      return;
-    }
+    const diagnostics = output.diagnostics ?? [];
+    output.diagnostics = [
+      ...diagnostics.filter((diagnostic) => diagnostic.type !== "pi-claude-directsdk/meta"),
+      metaDiagnostic(),
+    ];
     stream.push({ type: "error", reason: output.stopReason, error: output });
     stream.end();
   };
 
-  let relay: AdmissionRelay | null = null;
-  let child: ChildHandle | null = null;
-  let requestDir: string | null = null;
   const cleanup = (): void => {
+    if (abortRelay) options.signal?.removeEventListener("abort", abortRelay);
     if (child) {
       child.cancel();
     }
@@ -267,6 +307,7 @@ async function executeCall(
 
   try {
     const mergedEnv: NodeJS.ProcessEnv = { ...process.env, ...options.env };
+    const includePrefixHashes = promptHashesEnabled(mergedEnv);
     const conflicts = checkEnvConflicts(mergedEnv);
     if (conflicts.length > 0) {
       throw envConflictError(conflicts);
@@ -280,7 +321,8 @@ async function executeCall(
     const systemPrompt = getCurrentSystemPrompt(collapsed.messages);
     const tools = getCurrentTools(collapsed.messages);
     const history = collapsed.messages.filter((m) => m.role !== "system");
-    const nativeModelId = nativeModel(model.id, model.contextWindow);
+    const requestNativeModelId = nativeModel(model.id, model.contextWindow);
+    nativeModelId = requestNativeModelId;
     const build = buildRequestBody({
       tools,
       toolChoice: options.toolChoice,
@@ -288,7 +330,13 @@ async function executeCall(
       thinkingLevelMap: model.thinkingLevelMap,
       maxTokens: options["maxTokens"] as number | undefined,
     });
-    const { frames } = prepareHistory(history, new Set(build.toolNames));
+    const { frames } = prepareHistory(
+      history,
+      new Set(build.toolNames),
+      replayCacheControl(mergedEnv, requestNativeModelId),
+    );
+    measurements.setReplayFrameCount(frames.length);
+    measurements.mark("historyPrepared");
 
     // Extension request inspection hook. The replacement replaces the native
     // request body when it returns one.
@@ -304,6 +352,12 @@ async function executeCall(
           : (() => {
               throw new Error("onPayload replacement must be an object");
             })();
+    if (includePrefixHashes) {
+      measurements.hashPiInputs(systemPrompt, {
+        requestTools: body["tools"] ?? null,
+        mcpManifest: build.manifest,
+      });
+    }
 
     const resolved = resolveClaude(undefined, mergedEnv);
     if (!resolved?.[0]) {
@@ -314,6 +368,7 @@ async function executeCall(
         `Unsupported claude version: this provider qualifies ${QUALIFIED_CLI_RANGE}`,
       );
     }
+    cliAvailable = true;
     const upstream = mergedEnv["ANTHROPIC_BASE_URL"] || "https://api.anthropic.com";
 
     requestDir = deps.makeRequestDir();
@@ -328,17 +383,22 @@ async function executeCall(
     // before the completion gate consumes it, per the streamSimple contract.
     let providerResponse: { status: number; headers: Record<string, string> } | null = null;
     activeRelay.onUpstreamResponse = (status, headers) => {
+      measurements.mark("upstreamResponseHeaders");
       providerResponse = { status, headers };
     };
-    const abortRelay = (): void => {
+    activeRelay.onUpstreamRequestStarted = () => measurements.mark("upstreamRequestStarted");
+    activeRelay.onUpstreamFirstData = () => measurements.mark("upstreamFirstData");
+    activeRelay.onUpstreamResponseEnded = () => measurements.mark("upstreamResponseEnded");
+    abortRelay = (): void => {
       activeRelay.abort();
     };
     options.signal?.addEventListener("abort", abortRelay, { once: true });
 
     const childEnv = buildChildEnv({ baseEnv: mergedEnv, relayUrl: relay.url, body });
+    delete childEnv[PREFIX_HASH_ENV];
     const { command, args } = buildArgv({
       claudeBin: resolved[0],
-      nativeModelId,
+      nativeModelId: requestNativeModelId,
       files,
     });
     child = deps.spawn({
@@ -349,6 +409,7 @@ async function executeCall(
       timeoutMs,
       signal: options.signal,
     });
+    measurements.mark("childSpawned");
 
     stream.push({ type: "start", partial: output });
     started = true;
@@ -360,7 +421,11 @@ async function executeCall(
       if (!frame) {
         continue;
       }
+      if (i === frames.length - 1) {
+        measurements.mark("replayComplete");
+      }
       await child.writeLine(JSON.stringify(frame));
+      measurements.recordFrameWritten();
       if (frame.type === "user" && i < frames.length - 1) {
         for (;;) {
           const line = await child.nextLine();
@@ -376,6 +441,7 @@ async function executeCall(
               "Native history replay not supported: expected zero-turn acknowledgment",
             );
           }
+          measurements.recordHistoricalUserAcknowledgment();
           break;
         }
       }
@@ -415,7 +481,11 @@ async function executeCall(
           }
         }
       } else if (event.type === "result") {
-        results.push(event as unknown as NativeResultLine);
+        const result = event as unknown as NativeResultLine;
+        results.push(result);
+        if (isRecord(result.usage)) {
+          observedUsage = result.usage as NativeUsage;
+        }
       } else if (event.type === "stream_event") {
         const native = (event as { event?: unknown }).event;
         if (!isRecord(native)) {
@@ -430,6 +500,7 @@ async function executeCall(
                 typeof message["model"] === "string" ? message["model"] : streamModel;
               if (isRecord(message["usage"])) {
                 streamUsage = message["usage"] as NativeUsage;
+                observedUsage = streamUsage;
               }
             }
             break;
@@ -562,6 +633,7 @@ async function executeCall(
             const usage = native["usage"];
             if (isRecord(usage)) {
               streamUsage = { ...(streamUsage ?? {}), ...(usage as NativeUsage) } as NativeUsage;
+              observedUsage = streamUsage;
             }
             break;
           }
@@ -577,7 +649,7 @@ async function executeCall(
       }
     }
     const exitInfo = await child.wait();
-    options.signal?.removeEventListener("abort", abortRelay);
+    measurements.mark("childExited");
     if (options.signal?.aborted) {
       throw cancelledError();
     }
@@ -668,7 +740,8 @@ async function executeCall(
       throw nativeError(`${result?.subtype ?? "unknown exit"}${detail}`);
     }
 
-    const usage = mapUsage(authoritative.usage ?? streamUsage);
+    observedUsage = authoritative.usage ?? streamUsage ?? result.usage;
+    const usage = mapUsage(observedUsage);
     if (!usage) {
       throw incompleteError("Native result missing complete token usage");
     }
@@ -797,22 +870,11 @@ async function executeCall(
 
     const projection = messageProjection(output);
     const natives = used && relay.capture.message ? [relay.capture.message] : assistants;
-    output.diagnostics = [
-      encodeCarrier(natives, projection),
-      {
-        type: "pi-claude-directsdk/meta",
-        timestamp: Date.now(),
-        details: {
-          nativeModel: nativeModelId,
-          requestId: relay.requestId ?? "",
-          upstreamRequests: used ? 1 : 0,
-          blockedRequests: relay.denied,
-          nativeCostUsd: typeof result?.total_cost_usd === "number" ? result.total_cost_usd : -1,
-          nativeCostNote: "estimate, not subscription charge",
-          cliAvailable: true,
-        },
-      },
-    ];
+    nativeCostUsd =
+      typeof result.total_cost_usd === "number" ? result.total_cost_usd : -1;
+    const carrier = encodeCarrier(natives, projection);
+    measurements.mark("completionPublished");
+    output.diagnostics = [carrier, metaDiagnostic()];
 
     if (output.stopReason === "error") {
       stream.push({ type: "error", reason: "error", error: output });
