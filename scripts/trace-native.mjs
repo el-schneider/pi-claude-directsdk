@@ -11,14 +11,18 @@ const matches = command => typeof command === "string" &&
 const record = data => {
   if (destination) appendFileSync(destination, `${JSON.stringify(data)}\n`, { mode: 0o600 });
 };
-function observe(line) {
+function observe(line, pid) {
   if (!line.startsWith("{")) return;
   let event;
   try { event = JSON.parse(line); }
   catch (error) { record({ kind: "malformed-native-record", detail: error.message }); return; }
+  if (event.type === "control_response" && event.response?.request_id === "pi-picker") {
+    record({ kind: "native-discovery", pid, success: event.response.subtype === "success" });
+    return;
+  }
   if (event.type !== "result") return;
   record({
-    kind: "native-result", subtype: event.subtype, isError: event.is_error,
+    kind: "native-result", pid, subtype: event.subtype, isError: event.is_error,
     turns: event.num_turns,
     // Successful model text and replayed transcript records are never logged.
     ...(event.is_error ? {
@@ -40,7 +44,7 @@ childProcess.spawn = function (command, ...args) {
     pending += chunk.toString();
     let boundary;
     while ((boundary = pending.indexOf("\n")) !== -1) {
-      observe(pending.slice(0, boundary));
+      observe(pending.slice(0, boundary), child.pid);
       pending = pending.slice(boundary + 1);
     }
     if (pending.length > 8 * 1024 * 1024) {
@@ -49,7 +53,7 @@ childProcess.spawn = function (command, ...args) {
     }
   });
   child.on("close", (code, signal) => {
-    if (pending) observe(pending);
+    if (pending) observe(pending, child.pid);
     record({ kind: "claude-exit", pid: child.pid, code, signal });
   });
   return child;

@@ -18,6 +18,7 @@
     "extensions/**/*",
     "src/**/*",
     "scripts/verify.py",
+    "scripts/verify_warm.py",
     "scripts/trace-native.mjs",
     "docs/**/*",
     "README.md",

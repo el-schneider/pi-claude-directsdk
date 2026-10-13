@@ -34,6 +34,7 @@ export async function discoverModels(signal: AbortSignal): Promise<DiscoveredMod
   });
   let cwd: string | undefined;
   let child: ChildHandle | undefined;
+  let primaryError: unknown;
   try {
     cwd = await mkdtemp(join(tmpdir(), "pi-directsdk-picker-"));
     const address = guard.address();
@@ -88,13 +89,25 @@ export async function discoverModels(signal: AbortSignal): Promise<DiscoveredMod
           ? { supportedEffortLevels: row["supportedEffortLevels"] as string[] } : {}),
       };
     });
+  } catch (error) {
+    primaryError = error;
+    throw error;
   } finally {
-    if (child) {
-      child.cancel();
-      await child.wait();
+    const errors: unknown[] = [];
+    const cleanup = [
+      async () => { if (child) { child.cancel(); await child.wait(); } },
+      async () => {
+        guard.closeAllConnections();
+        await new Promise<void>((resolve, reject) => guard.close(error => error ? reject(error) : resolve()));
+      },
+      async () => { if (cwd) await rm(cwd, { recursive: true, force: true }); },
+    ];
+    for (const action of cleanup) {
+      try { await action(); } catch (error) { errors.push(error); }
     }
-    guard.closeAllConnections();
-    await new Promise<void>((resolve, reject) => guard.close(error => error ? reject(error) : resolve()));
-    if (cwd) await rm(cwd, { recursive: true, force: true });
+    if (errors.length > 0) {
+      if (primaryError !== undefined && !errors.includes(primaryError)) errors.unshift(primaryError);
+      throw new AggregateError(errors, "Claude discovery cleanup failed");
+    }
   }
 }

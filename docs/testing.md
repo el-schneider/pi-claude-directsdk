@@ -44,6 +44,30 @@ The harness copies every session entry into a private temporary snapshot. Pi for
 
 This is the primary regression check for provider switching and accumulated session history. A fresh request passing does not establish that an existing session works.
 
+### Same-process warm-cache measurement
+
+Check RPC setup without model requests:
+
+```sh
+python3 scripts/verify.py warm --dry-run
+```
+
+After approving three paid model requests, run:
+
+```sh
+python3 scripts/verify.py warm --paid --session /absolute/path/to/session.jsonl
+```
+
+Omit `--session` to start without existing history. The scenario keeps one Pi RPC process alive for exactly three greeting prompts. It disables Pi auto-retry, auto-compaction, and idle cache warming. It snapshots an existing session once and retains the original tool declarations and other extensions.
+
+A private benchmark extension blocks tool execution and allows at most one agent provider request per prompt and three in total. An unexpected provider call stops Pi with exit code `78` before the provider runs. This guard applies only to the benchmark, not normal provider behavior. Do not use extensions that independently make model calls outside Pi's agent request path.
+
+Each turn must produce one successful assistant response and admit exactly one upstream request. The harness rejects unexpected tools, retries, compaction, changed Pi prompt/tool hashes, or mismatched native-child counts. Guarded model-discovery children are counted separately because their initialize handshake does not make a model request.
+
+The summary reports wall time, token usage, cache-read share, phase timings, replay counts, request bytes, connection reuse, and Pi prefix hashes. It does not save model response text or native request bodies. It reports reuse without asserting a universal percentage: cache size thresholds, lifetime, model, and actual prompt changes affect results. The hashes cover Pi inputs, not CLI-added context.
+
+`--dry-run` initializes RPC, checks the model and guard, and sends no model prompts. A discovery child can still start. Dry-run success does not establish successful generation or warm-cache reuse. For this scenario, `--timeout` bounds each prompt; initialization commands have a maximum of 30 seconds, followed by bounded shutdown.
+
 ## Options and safety
 
 - `--model provider/model` selects the model. The default is `claude-directsdk/claude-haiku-5-5`.
@@ -55,7 +79,7 @@ Run from the same project directory as the original session. Existing tool permi
 
 Private artifacts go to `/tmp/pi-directsdk-verify-*`. The harness removes copied configuration, credentials, input snapshots, and Pi-generated test sessions after the run. It retains summaries and bounded native error diagnostics. It does not save model responses, credentials, or successful native transcript records. Native errors can quote input fragments; inspect the diagnostics before sharing them.
 
-The observer records real Claude process starts, replay acknowledgments, terminal result errors, and exits. It does not substitute native responses or alter the provider request. Automatic Pi retries, if enabled in the user’s settings, can consume additional allowance.
+The observer records real Claude process starts, replay acknowledgments, terminal result errors, and exits. It does not substitute native responses or alter the provider request. For the fresh and session scenarios, automatic Pi retries can consume additional allowance if enabled in the user's settings. The warm scenario explicitly disables them and installs its request-budget guard.
 
 ## Build checks and CI
 
@@ -66,4 +90,4 @@ npm run build
 
 These commands check types and compilation, not runtime behavior. Release CI runs only those checks. Runtime verification stays local because CI is not the user’s Pi installation and has no approved subscription credentials.
 
-The harness does not yet exercise an in-process `/reload`, cancellation, or an explicit tool round trip. Do not claim those behaviors are verified by these scenarios.
+The harness does not yet exercise an in-process `/reload`, forced subprocess stalls, cancellation, or an explicit tool round trip. Do not claim those behaviors are verified by these scenarios.

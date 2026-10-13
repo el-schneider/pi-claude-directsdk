@@ -2,12 +2,14 @@
 """Run verification through the user's installed Pi, never provider internals."""
 import argparse
 import json
+import math
 import os
 from pathlib import Path
 import shlex
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -17,19 +19,24 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def arguments():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("scenario", choices=("startup", "fresh", "session"))
+    parser.add_argument("scenario", choices=("startup", "fresh", "session", "warm"))
     parser.add_argument("--pi", default=os.environ.get("PI_VERIFY_PI", "pi"), help="Installed Pi executable")
     parser.add_argument("--extension", type=Path, default=ROOT / "extensions/claude-directsdk/index.ts")
     parser.add_argument("--model", default="claude-directsdk/claude-haiku-5-5")
     parser.add_argument("--session", type=Path, help="Existing session to snapshot and fork")
     parser.add_argument("--paid", action="store_true", help="Approve real model requests and subscription usage")
+    parser.add_argument("--dry-run", action="store_true", help="Warm scenario: initialize RPC and its request budget without sending model prompts")
     parser.add_argument("--timeout", type=float, default=120, help="Scenario deadline in seconds")
     args = parser.parse_args()
-    if args.scenario != "startup" and not args.paid:
-        parser.error("fresh and session require --paid; they make real model requests")
+    if args.dry_run and args.scenario != "warm":
+        parser.error("--dry-run is only supported by warm")
+    if args.scenario != "startup" and not args.paid and not args.dry_run:
+        parser.error("fresh, session, and warm require --paid; they make real model requests")
+    if args.scenario == "warm" and not args.model.startswith("claude-directsdk/"):
+        parser.error("warm requires --model claude-directsdk/MODEL")
     if args.scenario == "session" and args.session is None:
         parser.error("session requires --session PATH")
-    if args.timeout <= 0:
+    if not math.isfinite(args.timeout) or args.timeout <= 0:
         parser.error("--timeout must be positive")
     return args
 
@@ -84,6 +91,11 @@ def run(args):
         env["PI_VERIFY_TRACE"] = str(directory / "native.jsonl")
         env["NODE_OPTIONS"] = (env.get("NODE_OPTIONS", "") + " --import " +
                                shlex.quote(str(ROOT / "scripts/trace-native.mjs"))).strip()
+        if args.scenario == "warm":
+            sys.dont_write_bytecode = True
+            from verify_warm import run_warm
+            run_warm(args, executable, env, directory, report)
+            return
         command = [executable]
         if args.scenario == "startup":
             command += ["--offline", "--list-models", "claude-directsdk"]

@@ -9,9 +9,7 @@
  */
 
 import { ChildProcess, spawn, spawnSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+export { stableChildCwd } from "./child-cwd.js";
 
 import {
   cancelledError,
@@ -26,9 +24,13 @@ export function killProcessTree(pid: number | undefined): void {
     return;
   }
   if (process.platform === "win32") {
-    spawnSync("taskkill", ["/F", "/T", "/PID", String(pid)], {
+    const result = spawnSync("taskkill", ["/F", "/T", "/PID", String(pid)], {
       stdio: "ignore",
     });
+    if (result.error) throw result.error;
+    if (result.status !== 0) {
+      throw new Error(`taskkill failed for native process ${pid}: exit ${result.status}, signal ${result.signal}`);
+    }
     return;
   }
   try {
@@ -36,10 +38,8 @@ export function killProcessTree(pid: number | undefined): void {
     process.kill(-pid, "SIGKILL");
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    if (code !== "ESRCH" && code !== "EPERM") {
-      throw error;
-    }
-    // ESRCH: already gone. EPERM: the group leader is a zombie; nothing to kill.
+    if (code !== "ESRCH") throw error;
+    // The process group has already exited.
   }
 }
 
@@ -53,6 +53,7 @@ export interface ChildHandle {
   closeStdin(): void;
   /** Next stdout line, or null on EOF. Throws on timeout or cancellation. */
   nextLine(): Promise<string | null>;
+  /** Observe child closure within timeoutMs, including after cancellation. */
   wait(): Promise<ExitInfo>;
   killTree(): void;
   /** Reject pending reads and kill the tree. */
@@ -69,6 +70,9 @@ export function spawnSupervised(options: {
   timeoutMs: number;
   signal?: AbortSignal | undefined;
 }): ChildHandle {
+  if (!Number.isFinite(options.timeoutMs) || options.timeoutMs <= 0) {
+    throw new Error("timeoutMs must be positive finite milliseconds");
+  }
   const proc = spawn(options.command, options.args, {
     env: options.env,
     cwd: options.cwd,
@@ -92,7 +96,8 @@ export function spawnSupervised(options: {
   let cancelled = false;
   let lastActivity = Date.now();
   let stderrBuf = "";
-  let waitResolve: ((info: ExitInfo) => void) | null = null;
+  const exitWaiters = new Set<(info: ExitInfo) => void>();
+  const pendingWrites = new Set<(error: Error) => void>();
 
   const poke = (): void => {
     lastActivity = Date.now();
@@ -112,13 +117,29 @@ export function spawnSupervised(options: {
   };
 
   const failAll = (error: Error): void => {
-    failed = error;
+    failed ??= error;
+    for (const reject of [...pendingWrites]) reject(failed);
     let waiter = waiters.shift();
     while (waiter) {
-      waiter.reject(error);
+      waiter.reject(failed);
       waiter = waiters.shift();
     }
   };
+
+  const terminate = (error: Error): void => {
+    let failure = failed ?? error;
+    try {
+      handle.killTree();
+    } catch (killError) {
+      failure = new AggregateError([failure, killError], "Native request failed and its process tree could not be terminated");
+      failed = failure;
+    }
+    failAll(failure);
+  };
+  proc.stdin?.on("error", (error: Error) => terminate(error));
+  proc.stdin?.on("close", () => {
+    if (pendingWrites.size > 0) terminate(new Error("Native stdin closed before a write completed"));
+  });
 
   proc.stdout?.setEncoding("utf-8");
   proc.stdout?.on("data", (chunk: string) => {
@@ -167,8 +188,7 @@ export function spawnSupervised(options: {
     if (!exit) {
       exit = info;
     }
-    waitResolve?.(exit);
-    waitResolve = null;
+    for (const resolve of [...exitWaiters]) resolve(exit);
   };
 
   const onAbort = (): void => {
@@ -184,37 +204,48 @@ export function spawnSupervised(options: {
 
   const handle: ChildHandle = {
     async writeLine(line: string): Promise<void> {
-      if (cancelled) {
-        throw cancelledError();
-      }
+      if (failed) throw failed;
+      if (cancelled || options.signal?.aborted) throw cancelledError();
       const stdin = proc.stdin;
-      if (!stdin || stdin.destroyed) {
+      if (!stdin || stdin.destroyed || stdin.writableEnded) {
         throw new Error("Child stdin is closed");
       }
-      const ok = stdin.write(`${line}\n`);
-      if (!ok) {
-        await new Promise<void>((resolve, reject) => {
-          stdin.once("drain", () => resolve());
-          stdin.once("error", reject);
-        });
-      }
+      await new Promise<void>((resolve, reject) => {
+        let settled = false;
+        const finish = (error?: Error): void => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          pendingWrites.delete(onFailure);
+          if (error) reject(error);
+          else resolve();
+        };
+        const onFailure = (error: Error): void => finish(error);
+        const timer = setTimeout(() => {
+          terminate(timeoutError("native stdin did not accept a frame within the request timeout"));
+        }, options.timeoutMs);
+        timer.unref();
+        pendingWrites.add(onFailure);
+        try {
+          stdin.write(`${line}\n`, (error) => {
+            if (error) terminate(error);
+            else finish();
+          });
+        } catch (error) {
+          terminate(error instanceof Error ? error : new Error(String(error)));
+        }
+      });
     },
 
     closeStdin(): void {
-      try {
-        proc.stdin?.end();
-      } catch {
-        // Already closed; exit observation carries the outcome.
-      }
+      proc.stdin?.end();
     },
 
     async nextLine(): Promise<string | null> {
       for (;;) {
+        if (failed) throw failed;
         if (cancelled || options.signal?.aborted) {
           throw cancelledError();
-        }
-        if (failed) {
-          throw failed;
         }
         const queued = queue.shift();
         if (queued !== undefined) {
@@ -225,31 +256,28 @@ export function spawnSupervised(options: {
         }
         const remaining = options.timeoutMs - (Date.now() - lastActivity);
         if (remaining <= 0) {
-          throw timeoutError("no native output within the request timeout");
+          terminate(timeoutError("no native output within the request timeout"));
+          throw failed;
         }
         const result = await new Promise<string | null>((resolve, reject) => {
-          const timer = setTimeout(() => {
-            const index = waiters.findIndex(
-              (w) => w.resolve === resolve && w.reject === reject,
-            );
-            if (index !== -1) {
-              waiters.splice(index, 1);
-            }
-            reject(timeoutError("no native output within the request timeout"));
-          }, remaining);
-          if (timer.unref) {
-            timer.unref();
-          }
-          waiters.push({
-            resolve: (line) => {
+          const waiter = {
+            resolve: (line: string | null) => {
               clearTimeout(timer);
               resolve(line);
             },
-            reject: (error) => {
+            reject: (error: Error) => {
               clearTimeout(timer);
               reject(error);
             },
-          });
+          };
+          const timer = setTimeout(() => {
+            const index = waiters.indexOf(waiter);
+            if (index !== -1) waiters.splice(index, 1);
+            terminate(timeoutError("no native output within the request timeout"));
+            waiter.reject(failed!);
+          }, remaining);
+          timer.unref();
+          waiters.push(waiter);
         });
         if (result !== null) {
           return result;
@@ -263,10 +291,22 @@ export function spawnSupervised(options: {
 
     wait(): Promise<ExitInfo> {
       if (exit) {
-        return Promise.resolve(exit);
+        return failed && !cancelled ? Promise.reject(failed) : Promise.resolve(exit);
       }
-      return new Promise((resolve) => {
-        waitResolve = resolve;
+      return new Promise((resolve, reject) => {
+        const onExit = (info: ExitInfo): void => {
+          clearTimeout(timer);
+          exitWaiters.delete(onExit);
+          if (failed && !cancelled) reject(failed);
+          else resolve(info);
+        };
+        const timer = setTimeout(() => {
+          exitWaiters.delete(onExit);
+          terminate(timeoutError("native process did not close within the request timeout"));
+          reject(failed);
+        }, options.timeoutMs);
+        timer.unref();
+        exitWaiters.add(onExit);
       });
     },
 
@@ -277,12 +317,9 @@ export function spawnSupervised(options: {
     },
 
     cancel(): void {
-      if (cancelled) {
-        return;
-      }
+      if (cancelled || exit) return;
       cancelled = true;
-      handle.killTree();
-      failAll(cancelledError());
+      terminate(cancelledError());
     },
 
     get exitInfo(): ExitInfo | null {
@@ -294,16 +331,4 @@ export function spawnSupervised(options: {
     },
   };
   return handle;
-}
-
-/** Lazily created, process-wide stable child working directory. */
-let stableCwd: string | null = null;
-
-export function stableChildCwd(): string {
-  if (!stableCwd) {
-    // A fresh tempdir per request moves the native cache prefix every round
-    // and destroys prompt-cache reuse; one stable cwd per process keeps it.
-    stableCwd = mkdtempSync(join(tmpdir(), "pi-directsdk-cwd-"));
-  }
-  return stableCwd;
 }

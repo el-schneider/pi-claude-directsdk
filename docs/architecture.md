@@ -63,7 +63,21 @@ The relay reconstructs the upstream assistant message from the SSE stream (`SseC
 
 ### Child supervision (`src/process.ts`)
 
-Each Pi model call owns one child in its own process group. Abort and failure kill the full tree. This matters on Windows, where the npm `claude` shim is `cmd.exe` -> `node` and a plain `kill()` would orphan the node child that holds the request open. Stdout is consumed as newline-delimited JSON with an idle deadline that resets on every received line. The caller receives the child final exit status after its output streams close.
+Each Pi model call owns one child in its own process group. Abort and failure kill the full tree. This matters on Windows, where the npm `claude` shim is `cmd.exe` -> `node` and a plain `kill()` would orphan the node child that holds the request open. Stdout is consumed as newline-delimited JSON with an idle deadline that resets on every received line. Each stdin write and child-closure wait also has a deadline, using the request's `timeoutMs`. These are phase limits, not one total runtime limit. Timeout kills the process tree and preserves the first failure. Cancellation rejects pending reads and writes; exit observation remains bounded. Expired read waiters are removed by identity, and every completed operation clears its timer.
+
+The caller receives the child final exit status after its output streams close. Executable tool calls still wait for that exit and the complete upstream response. Discovery cleanup attempts every resource release even if observing child closure fails.
+
+### Native working directory (`src/child-cwd.ts`)
+
+Native model-request children share an empty, persistent directory. Its path remains stable across Pi processes, avoiding a changing native working-directory prefix after restart. Request files, credentials, and transcripts are not stored there.
+
+- Linux: `${XDG_CACHE_HOME:-~/.cache}/pi-claude-directsdk/child`.
+- macOS: `~/Library/Caches/pi-claude-directsdk/child`.
+- Windows: `%LOCALAPPDATA%/pi-claude-directsdk/child`, with the user's local app-data directory as the fallback.
+
+On POSIX, the provider verifies that its cache root and child directory belong to the current effective user and have mode `0700`. It rejects symlinks and nonempty child directories instead of reading unexpected project instructions or deleting files. Windows uses the access controls inherited from the user's cache parent. Relative cache-directory settings fail with the setting name and a remedy.
+
+The first request after this directory change can miss a previously cached native prefix. A stable path removes this source of cache invalidation; legitimate Pi prompt and tool changes still affect reuse. Cross-restart API cache reuse has not yet been measured.
 
 ### Stream conversion (`src/stream.ts`)
 

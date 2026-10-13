@@ -117,3 +117,16 @@ The relay now uses shared HTTP and HTTPS agents, with at most two idle sockets p
 Diagnostics now report whether Node reused an upstream socket and separate response-header arrival from first response data. These measurements do not isolate DNS or TLS time, and headers-to-first-data is not necessarily time to the first generated token.
 
 TypeScript checking, whitespace checking, and the existing offline startup verification passed. The paid batch verified normal successful HTTPS reuse across request-scoped child processes. Dedicated cancellation and late-cleanup checks have not run. The post-fix batch used exactly the three additional approved paid requests; no further paid calls were made.
+
+
+## Subsequent lifecycle and benchmark changes
+
+Subprocess writes and child-closure waits now have request-timeout bounds. Read timeouts remove the correct waiter and terminate the child. Cancellation rejects pending reads and writes, and discovery cleanup releases its server and temporary directory even after an exit-observation failure. The completion gate before executable tool calls is unchanged.
+
+Model-request children now use a persistent, empty, private cache directory rather than a new temporary directory per Pi process. See [architecture.md](architecture.md#native-working-directory-srcchild-cwdts) for paths and validation. This removes a changing directory path from native context, but cross-restart API cache reuse remains unmeasured.
+
+The supported `warm` scenario now reproduces the three-turn same-process measurement through installed Pi. It has an explicit three-request budget, private configuration and session cleanup, no-tool enforcement, and a no-model-request dry run. See [testing.md](testing.md#same-process-warm-cache-measurement).
+
+TypeScript checking, compilation, Python and observer syntax checks, offline startup, and RPC dry-run preparation passed. A complete-session loopback-only refusal probe completed 86 historical acknowledgments and reached the deliberately blocked upstream. Both native children exited, and the persistent child directory stayed empty with mode `0700`. That probe verifies replay and failure cleanup, not successful generation. Its model call failed as expected; no paid request was made.
+
+Forced backpressure, hung-child deadlines, cancellation, Windows behavior, and successful paid warm turns after these lifecycle changes remain unverified. The earlier measured 99.59% and 99.71% warm-cache shares are from before these subsequent changes.
