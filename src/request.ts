@@ -274,6 +274,8 @@ export function writeRequestFiles(
       [MCP_SERVER_NAME]: {
         command: process.execPath,
         args: [mcpPath, toolsPath],
+        // A compiled Bun executable must run this script as Bun, not restart Pi.
+        ...(process.versions.bun ? { env: { BUN_BE_BUN: "1" } } : {}),
       },
     },
   });

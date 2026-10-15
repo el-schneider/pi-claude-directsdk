@@ -3,8 +3,8 @@
  *
  * Inventory only: it advertises the current Pi tool set to the native child
  * and denies every call. Pi alone executes tools. The source is written into
- * the per-request private directory and spawned with the current Node
- * executable, so the provider ships no extra runtime dependency.
+ * the per-request private directory and spawned with the current JavaScript
+ * runtime, so the provider ships no extra runtime dependency.
  *
  * No host imports, no effects, no executable tool implementations, and no
  * logging of tool payloads.
