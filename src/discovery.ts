@@ -98,6 +98,8 @@ export async function discoverModels(signal: AbortSignal): Promise<DiscoveredMod
       async () => { if (child) { child.cancel(); await child.wait(); } },
       async () => {
         guard.closeAllConnections();
+        // Bun also stops listening here; Node still needs an explicit close.
+        if (!guard.listening) return;
         await new Promise<void>((resolve, reject) => guard.close(error => error ? reject(error) : resolve()));
       },
       async () => { if (cwd) await rm(cwd, { recursive: true, force: true }); },
