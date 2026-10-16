@@ -14,6 +14,10 @@ Assign an issue to yourself when taking ownership. Link duplicates to the existi
 
 The daily cleanup workflow only handles `needs-info` issues. It reminds after 30 inactive days and closes after another 14.
 Confirmed issues and milestone issues are exempt. The workflow does not clean up pull requests.
+
+Closing an issue automatically locks its discussion. Cleanup also locks the issues it closes.
+Existing closed issues are not backfilled. To continue a discussion after reopening an issue, manually unlock it in GitHub.
+Reporters can request reopening through a new help issue that links the closed issue.
 See [contribution guidance](../CONTRIBUTING.md) for the reporter-facing policy.
 
 Public contributions are issue-only. If an unsolicited pull request arrives, explain that policy and close it.
@@ -36,8 +40,12 @@ Merging does not publish a package or generate release notes. Only pushing a `v*
 4. Tag the release commit with `v` followed by the package version and push that tag.
 5. Confirm that the Release workflow passed. It stages the npm package and creates a draft GitHub Release with generated notes.
 6. Approve the staged package on npm using the configured maintainer approval process.
-7. Confirm the new version is available with `npm view pi-claude-directsdk@<version> version`.
-8. Review the generated notes, then publish the draft GitHub Release.
+7. Automation publishes the draft GitHub Release after confirming the exact package version is available on npm.
+
+The publication workflow checks after a successful Release workflow and every 15 minutes.
+GitHub can delay scheduled runs. You can also run `Publish available GitHub releases` manually from the Actions tab.
+It only publishes version-tagged drafts created by GitHub Actions; it does not rewrite their generated notes.
+If you want to review the notes, do so before approving the staged npm package.
 
 Do not move or reuse a published release tag. Investigate a failed workflow before rerunning it; package staging is a remote mutation.
 Release tags are protected against creation, movement, and deletion except by repository administrators.

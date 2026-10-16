@@ -20,7 +20,8 @@ jobs:
       issues: write
       actions: write # Persist the action's progress between runs.
     steps:
-      - uses: actions/stale@1e223db275d687790206a7acac4d1a11bd6fe629 # v10
+      - id: cleanup
+        uses: actions/stale@1e223db275d687790206a7acac4d1a11bd6fe629 # v10
         with:
           only-issue-labels: needs-info
           exempt-issue-labels: confirmed
@@ -38,7 +39,23 @@ jobs:
           close-issue-message: >-
             Closing because the requested information has not arrived. This does
             not mean the problem is resolved. If you can provide the missing
-            information, comment here and ask the maintainer to reopen the issue.
+            information, open a new help issue linking to this one and ask the
+            maintainer to reopen it. Closed issues are automatically locked.
           close-issue-reason: not_planned
           remove-issue-stale-when-updated: true
           operations-per-run: 30
+      # GITHUB_TOKEN closures do not trigger the issues workflow.
+      - name: Lock issues closed by cleanup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CLOSED_ISSUES: ${{ steps.cleanup.outputs.closed-issues-prs }}
+        shell: bash
+        run: |
+          jq -r '.[] | select(.pull_request == null) | .number' <<< "$CLOSED_ISSUES" |
+            while IFS= read -r number; do
+              state=$(gh api "repos/${GH_REPO}/issues/${number}" --jq '.state')
+              if [[ "$state" == "closed" ]]; then
+                gh api --method PUT "repos/${GH_REPO}/issues/${number}/lock"
+              fi
+            done

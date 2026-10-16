@@ -3,7 +3,8 @@
 # Pushing a `v*` tag verifies the build, stages the package on npm
 # through OIDC trusted publishing (no long-lived token), and creates a
 # draft GitHub Release with generated notes. A maintainer approves the
-# staged package with 2FA, verifies npm availability, then publishes the draft.
+# staged package with 2FA. A separate workflow publishes the draft once
+# that version is available on npm.
 #
 # One-time npm setup (package already exists on npmjs.com):
 # npmjs.com -> pi-claude-directsdk -> Settings -> Trusted publishing ->

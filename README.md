@@ -1,6 +1,10 @@
 # Pi Claude DirectSDK
 
+[![CI](https://github.com/joaomj/pi-claude-directsdk/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/joaomj/pi-claude-directsdk/actions/workflows/ci.yml?query=branch%3Amain)
+[![Release workflow](https://github.com/joaomj/pi-claude-directsdk/actions/workflows/release.yml/badge.svg)](https://github.com/joaomj/pi-claude-directsdk/actions/workflows/release.yml)
 [![npm version](https://img.shields.io/npm/v/pi-claude-directsdk.svg)](https://www.npmjs.com/package/pi-claude-directsdk)
+[![Node.js requirement](https://img.shields.io/node/v/pi-claude-directsdk)](#requirements)
+[![License](https://img.shields.io/github/license/joaomj/pi-claude-directsdk)](LICENSE)
 
 Use Claude inside Pi through the unmodified Claude Code executable. Pi owns the transcript, tools, approvals, and retries. The CLI supplies subscription authentication as a model transport.
 

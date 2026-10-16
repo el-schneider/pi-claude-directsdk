@@ -25,6 +25,10 @@ The maintainer uses `needs-info` when a report needs more information and `confi
 Only issues labeled `needs-info` are eligible for inactivity cleanup.
 After 30 inactive days, automation posts a reminder. After another 14 inactive days, it closes the issue.
 Confirmed issues and issues assigned to a milestone are exempt. Pull requests are not subject to this cleanup.
-A response before closure resets the inactivity timer. After closure, provide the missing information and ask the maintainer to reopen the issue.
+A response before closure resets the inactivity timer.
+
+Closed issues are automatically locked, including issues closed by cleanup.
+To request reopening, open a new help issue, link the closed issue, and provide the missing information or explain why it needs reopening.
+Reopening does not automatically unlock the discussion; the maintainer must unlock it manually.
 
 Feature requests and confirmed bugs are not closed merely because implementation has not started.

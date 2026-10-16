@@ -1,0 +1,25 @@
+name: Lock closed issues
+
+on:
+  issues:
+    types: [closed]
+
+permissions:
+  issues: write
+
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Lock the closed issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        shell: bash
+        run: |
+          state=$(gh api "repos/${GH_REPO}/issues/${ISSUE_NUMBER}" --jq '.state')
+          if [[ "$state" == "closed" ]]; then
+            gh api --method PUT "repos/${GH_REPO}/issues/${ISSUE_NUMBER}/lock"
+          fi
