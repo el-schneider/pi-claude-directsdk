@@ -95,6 +95,12 @@ There is no matched benchmark establishing an overall speed winner. Using the of
 - [Transport measurements](docs/transport-measurements.md): timing baseline, warm-cache reuse, and measurement limits.
 - [Full Bridge comparison](docs/comparison.md): transport, state, caching, authentication, and policy trade-offs.
 
+## Issues and security
+
+Bug reports, feature requests, and questions are welcome through [issue forms](https://github.com/joaomj/pi-claude-directsdk/issues/new/choose).
+This project does not accept unsolicited public pull requests. See [contribution guidance](CONTRIBUTING.md).
+Report vulnerabilities privately as described in the [security policy](SECURITY.md).
+
 ## Acknowledgments
 
 Behavioral reference: [Hermes Claude Subscription DirectSDK](https://github.com/NousResearch/hermes-plugin-claude-subscription-directsdk) (MIT). This project copies its behavior contract, not its code.

@@ -104,7 +104,7 @@ npm run check
 npm run build
 ```
 
-These commands check types and compilation, not runtime behavior. Release CI runs only those checks. Runtime verification stays local because CI is not the user’s Pi installation and has no approved subscription credentials.
+These commands check types and compilation, not runtime behavior. Branch, pull request, and release CI run those checks. Runtime verification stays local because CI is not the user’s Pi installation and has no approved subscription credentials.
 
 The permanent harness does not yet exercise an in-process `/reload`, forced subprocess stalls, cancellation, or an explicit tool round trip. Temporary checks described above do not extend the supported scenarios.
 
