@@ -1,0 +1,72 @@
+name: Help and setup
+description: Ask a question or get help installing, configuring, or using DirectSDK.
+title: "[Help]: "
+labels: [question, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search [existing issues](https://github.com/joaomj/pi-claude-directsdk/issues) and check the [troubleshooting guide](https://github.com/joaomj/pi-claude-directsdk/blob/main/docs/troubleshooting.md) first.
+        Do not share credentials, tokens, private prompts, or unredacted conversation traces.
+        Report security vulnerabilities through [private reporting](https://github.com/joaomj/pi-claude-directsdk/security/advisories/new), not here.
+  - type: textarea
+    id: question
+    attributes:
+      label: What do you need help with?
+      description: Describe your goal and where you are stuck. General usage questions are welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps taken or commands run
+      description: Include what happened, if relevant. Remove secrets before sharing commands.
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you already tried?
+      description: Include any relevant documentation or existing issues you checked.
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: Installation method
+      options:
+        - npm package through pi install
+        - Git repository through pi install
+        - Local checkout
+        - Other or not installed yet
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and architecture
+      placeholder: macOS 15 arm64, Ubuntu 24.04 x86_64, or Windows 11 with WSL
+    validations:
+      required: true
+  - type: input
+    id: extension-version
+    attributes:
+      label: DirectSDK version or commit
+      description: Include the installed version or Git commit, if known. Use pi list to identify your installation source.
+  - type: input
+    id: pi-version
+    attributes:
+      label: Pi version
+      description: Output of pi --version, if installed.
+  - type: input
+    id: claude-version
+    attributes:
+      label: Claude Code version
+      description: Output of claude --version, if installed.
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js version
+      description: Output of node --version, if used. Say bundled runtime if you use compiled Pi.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant error output or logs (optional)
+      description: Paste only the relevant excerpt after removing credentials, tokens, private prompts, file paths, and conversation content.
+      render: shell

@@ -1,6 +1,10 @@
 # Pi Claude DirectSDK
 
+[![CI](https://github.com/joaomj/pi-claude-directsdk/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/joaomj/pi-claude-directsdk/actions/workflows/ci.yml?query=branch%3Amain)
+[![Release workflow](https://github.com/joaomj/pi-claude-directsdk/actions/workflows/release.yml/badge.svg)](https://github.com/joaomj/pi-claude-directsdk/actions/workflows/release.yml)
 [![npm version](https://img.shields.io/npm/v/pi-claude-directsdk.svg)](https://www.npmjs.com/package/pi-claude-directsdk)
+[![Node.js requirement](https://img.shields.io/node/v/pi-claude-directsdk)](#requirements)
+[![License](https://img.shields.io/github/license/joaomj/pi-claude-directsdk)](LICENSE)
 
 Use Claude inside Pi through the unmodified Claude Code executable. Pi owns the transcript, tools, approvals, and retries. The CLI supplies subscription authentication as a model transport.
 
@@ -94,6 +98,12 @@ There is no matched benchmark establishing an overall speed winner. Using the of
 - [Testing](docs/testing.md): verified environments, offline checks, and paid replay scenarios. Offline startup was verified on Pi 1.3.0; paid conversation checks used Pi 1.2.0 and have not been repeated on 1.3.0.
 - [Transport measurements](docs/transport-measurements.md): timing baseline, warm-cache reuse, and measurement limits.
 - [Full Bridge comparison](docs/comparison.md): transport, state, caching, authentication, and policy trade-offs.
+
+## Issues and security
+
+Bug reports, feature requests, and questions are welcome through [issue forms](https://github.com/joaomj/pi-claude-directsdk/issues/new/choose).
+This project does not accept unsolicited public pull requests. See [contribution guidance](CONTRIBUTING.md).
+Report vulnerabilities privately as described in the [security policy](SECURITY.md).
 
 ## Acknowledgments
 

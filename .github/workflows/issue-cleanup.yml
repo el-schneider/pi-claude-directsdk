@@ -1,0 +1,61 @@
+name: Issue cleanup
+
+on:
+  schedule:
+    - cron: "23 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-cleanup
+  cancel-in-progress: false
+
+jobs:
+  needs-info:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      issues: write
+      actions: write # Persist the action's progress between runs.
+    steps:
+      - id: cleanup
+        uses: actions/stale@1e223db275d687790206a7acac4d1a11bd6fe629 # v10
+        with:
+          only-issue-labels: needs-info
+          exempt-issue-labels: confirmed
+          exempt-all-issue-milestones: true
+          days-before-issue-stale: 30
+          days-before-issue-close: 14
+          days-before-pr-stale: -1
+          days-before-pr-close: -1
+          stale-issue-label: awaiting-response
+          stale-issue-message: >-
+            This issue is waiting for the information requested above and has had
+            no activity for 30 days. Please provide that information so the
+            maintainer can continue investigating. Without a response, this issue
+            will close in 14 days. Do not share credentials or private conversation traces.
+          close-issue-message: >-
+            Closing because the requested information has not arrived. This does
+            not mean the problem is resolved. If you can provide the missing
+            information, open a new help issue linking to this one and ask the
+            maintainer to reopen it. Closed issues are automatically locked.
+          close-issue-reason: not_planned
+          remove-issue-stale-when-updated: true
+          operations-per-run: 30
+      # GITHUB_TOKEN closures do not trigger the issues workflow.
+      - name: Lock issues closed by cleanup
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CLOSED_ISSUES: ${{ steps.cleanup.outputs.closed-issues-prs }}
+        shell: bash
+        run: |
+          jq -r '.[] | select(.pull_request == null) | .number' <<< "$CLOSED_ISSUES" |
+            while IFS= read -r number; do
+              state=$(gh api "repos/${GH_REPO}/issues/${number}" --jq '.state')
+              if [[ "$state" == "closed" ]]; then
+                gh api --method PUT "repos/${GH_REPO}/issues/${number}/lock"
+              fi
+            done
