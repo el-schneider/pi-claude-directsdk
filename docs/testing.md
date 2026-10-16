@@ -10,6 +10,22 @@ The repository has no isolated test suite, mocked provider runtime, or fake upst
 
 Use `--pi /absolute/path/to/pi` or `PI_VERIFY_PI` to select another installed executable. The harness excludes repository `node_modules` directories from automatic executable lookup.
 
+## Verified environments
+
+The current maintainer installation is Pi 1.3.0, confirmed with `pi --version`. The offline startup scenario passes on this installation with no stderr and no observed Claude child starts. Paid model calls have not been reverified on Pi 1.3.0.
+
+Before v0.1.7 was released, both compiled-Pi fixes passed these checks on macOS arm64 with compiled Pi 1.2.0 / Bun 1.3.14 and Claude Code 2.1.281:
+
+- The emitted MCP helper command completed initialization and tool listing, and denied native tool execution. The pre-fix command started Pi instead and failed in an empty offline configuration.
+- The real CLI discovery flow returned seven picker models under Node 26.10.0 and compiled Pi. The pre-fix compiled runtime failed during server cleanup.
+- The compiled Pi model picker completed live catalog refresh in a private configuration. A separate offline process listed 13 DirectSDK entries, including aliases.
+- Six paid calls to `claude-haiku-4-5-20251001` covered a fresh response and a four-turn conversation. The conversation remembered a marker, read a real file through Pi's `read` tool, recalled both values, and recalled them again after restarting Pi and resuming.
+- Each model call in the four-turn conversation admitted one upstream request with none blocked. The conversation produced no unintended Pi sessions or stderr errors.
+
+The paid conversation checks used both fixes together. The protocol, discovery, model-picker, and multi-turn conversation checks used temporary verification scripts, not permanent harness scenarios. They do not add repeatable tool-round-trip coverage to the repository. The short paid conversations reported no cache reads and do not verify warm-cache reuse. Separate long-session cache measurements are recorded in [transport-measurements.md](transport-measurements.md).
+
+The two compiled-Pi fixes have not been verified locally on Linux. Earlier Linux lifecycle and cache measurements remain separate evidence; they do not cover these fixes.
+
 ## Scenarios
 
 ### Offline startup
@@ -90,7 +106,7 @@ npm run build
 
 These commands check types and compilation, not runtime behavior. Release CI runs only those checks. Runtime verification stays local because CI is not the user’s Pi installation and has no approved subscription credentials.
 
-The harness does not yet exercise an in-process `/reload`, forced subprocess stalls, cancellation, or an explicit tool round trip. Do not claim those behaviors are verified by these scenarios.
+The permanent harness does not yet exercise an in-process `/reload`, forced subprocess stalls, cancellation, or an explicit tool round trip. Temporary checks described above do not extend the supported scenarios.
 
 
 Separate temporary Linux supervisor checks verified forced write/read/exit stalls and cancellation using real subprocesses and process groups. A three-request installed-Pi check verified cache reuse after restarting Pi. These checks are recorded in [transport-measurements.md](transport-measurements.md#linux-lifecycle-and-cross-restart-verification); they are not additional scenarios in the supported harness.

@@ -9,9 +9,9 @@
 | No `claude` on `PATH` | `missing` | Install with `npm install -g @anthropic-ai/claude-code` or set `CLAUDE_DIRECTSDK_COMMAND` to the executable path. |
 | CLI installed but not logged in | `logged-out` | Run `claude auth login` as the user Pi runs as, set `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) in the environment Pi runs in, or point `CLAUDE_DIRECTSDK_CONFIG_DIR` at a logged-in config directory. Then select the provider again. |
 | Conflicting auth or backend overrides | `env-conflict` | Remove the named variables from the launching environment. Values are never printed. |
-| Catalog refresh fails | catalog | Read the warning for the source or CLI failure. Retry `/model` or run `pi update --models`. No pinned fallback is used. |
+| Catalog refresh fails | catalog | Read the warning for the source or CLI failure. Open `/model` in interactive Pi and wait for refresh. No pinned fallback is used. |
 | Model excluded from catalog | metadata | Read the warning for the missing field. Update Claude Code if picker metadata is incomplete. Unverified limits and prices are never guessed. |
-| No DirectSDK models on a fresh offline install | catalog | Connect once and run `pi update --models`, or start interactive Pi and open `/model`. |
+| No DirectSDK models on a fresh offline install | catalog | Connect once, start interactive Pi, and open `/model`. Wait for refresh before selecting a model from the command line. |
 | History cannot be replayed | `replay` | Compact or restart the session. Common causes: an empty assistant message, a tool call outside the current inventory, assistant prefill, or an unsupported content block. |
 | Prompt is too long | `native` | Read the reported route and context window. Remove stale `contextWindow` overrides in `models.json` to use verified limits, or compact the session. |
 | Native request failed | `native` | Read the native detail in the message. |
@@ -20,6 +20,23 @@
 | Request cancelled | `cancelled` | Re-run the request. Cancel kills the full child process tree. |
 
 Missing CLI and logged-out CLI fail before any upstream contact. The messages are actionable and safe to show.
+
+## Compiled Pi compatibility
+
+Upgrade to DirectSDK v0.1.7 or later if compiled Pi shows either symptom:
+
+- Catalog refresh fails with `Claude discovery cleanup failed` or `ERR_SERVER_NOT_RUNNING`, even after the CLI picker succeeds.
+- Model calls create extra Pi sessions in the native child working directory, or the helper reports `No API key found for the selected model` instead of answering MCP requests.
+
+Version 0.1.7 handles Bun's server-shutdown behavior and starts the MCP helper in Bun runtime mode instead of restarting Pi. Do not set `BUN_BE_BUN` globally: the provider applies it only to the helper.
+
+Follow the [upgrade instructions](../README.md#upgrade), restart Pi, then open `/model` and wait for refresh. In Pi 1.3.0, `pi update --models` does not load this extension.
+
+## High token usage
+
+Use DirectSDK v0.1.7 or later to get the historical prompt-cache repair. The provider still sends history on each call. A cache hit reuses a stable prefix; it does not eliminate history transmission.
+
+Check cache-read share in message diagnostics across a stable, sufficiently long conversation. Short conversations, changed prompts or tools, cache expiry, and upstream eviction can prevent reuse. Token counters do not establish subscription allowance deductions. See [transport-measurements.md](transport-measurements.md) for the recorded evidence and its limits.
 
 ## Environment reference
 

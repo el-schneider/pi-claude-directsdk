@@ -22,12 +22,13 @@ Limits:
 
 ## Requirements
 
-- Node 20 or later.
+- Pi. The current maintainer installation is Pi 1.3.0; see [verification details](docs/testing.md#verified-environments).
+- Node 20 or later for Node-based Pi installations and local development. Compiled Pi uses its bundled runtime.
 - Claude Code in the qualified range `>=2.1.263 <2.2.0` (see `QUALIFIED_CLI_RANGE` in `src/models.ts`).
 - A Claude paid plan. The free plan excludes the CLI.
 - A Claude Code login via `claude auth login`.
 
-The installed-Pi harness is verified with Pi 1.1.0 and Claude Code 2.1.281. Verification includes offline startup and a paid request from a complete existing-session fork.
+Offline startup verification passes on Pi 1.3.0. Earlier paid conversation checks used compiled Pi 1.2.0 / Bun 1.3.14 and Claude Code 2.1.281 on macOS arm64. They covered a Pi tool round trip, history replay, and resuming after a Pi restart; paid checks have not been repeated on Pi 1.3.0. See [testing.md](docs/testing.md#verified-environments) for the verification scope.
 
 ## Install
 
@@ -43,19 +44,21 @@ Sign in through the official CLI login:
 claude auth login
 ```
 
-Install the extension, then restart Pi:
+Install the extension from npm:
+
+```sh
+pi install npm:pi-claude-directsdk
+```
+
+Alternatively, install from Git. Choose one source, not both:
 
 ```sh
 pi install git:github.com/joaomj/pi-claude-directsdk
 ```
 
-Refresh model catalogs once before selecting a DirectSDK model on a fresh install:
+Start or restart interactive Pi, open `/model`, and wait for the DirectSDK catalog refresh. Select a DirectSDK model. On a fresh install, this step must complete before selecting the model from the command line.
 
-```sh
-pi update --models
-```
-
-Then start Pi with a DirectSDK model:
+`pi update --models` does not load this extension in Pi 1.3.0; use the interactive model picker for DirectSDK refresh. After a successful refresh, later invocations can use the saved catalog:
 
 ```sh
 pi --model claude-directsdk/haiku
@@ -64,6 +67,22 @@ pi --model claude-directsdk/haiku
 DirectSDK uses the CLI login, not the Pi Anthropic login. The `npm install` flag enables the Claude Code installer for that command only.
 
 The model catalog does not guarantee account entitlement. Start with `haiku` for a small request. Models that require usage credits can incur separate charges. To use only the included subscription allowance, disable additional paid usage in your Claude account.
+
+## Upgrade
+
+Version 0.1.7 includes the historical prompt-cache repair and both compiled-Pi fixes. Update the source you installed:
+
+```sh
+# npm installation
+pi update npm:pi-claude-directsdk
+
+# Git installation
+pi update git:github.com/joaomj/pi-claude-directsdk
+```
+
+Run only the command for your source; `pi list` shows installed declarations. Version-pinned sources remain pinned when updated. To change a pin or switch sources, remove the old declaration with `pi remove <old-source>`, then install the desired source. Do not keep both npm and Git installations.
+
+Restart Pi after upgrading, then open `/model` and wait for catalog refresh.
 
 ## Use
 
@@ -111,13 +130,17 @@ This runs offline startup verification through your installed Pi and consumes no
 
 ## Costs
 
+Every model call still sends Pi's conversation history. Since v0.1.7, an explicit historical cache anchor lets stable history be reused from the upstream prompt cache. Earlier long-session checks measured more than 99.5% warm cache-read share, including after restarting Pi.
+
+Cache reuse depends on stable inputs, cache lifetime, and upstream availability. It does not measure subscription allowance deductions or guarantee a particular saving. See the [measurement report](docs/transport-measurements.md) for workloads and limits.
+
 Per-model cost metadata comes from [Anthropic’s pricing documentation](https://platform.claude.com/docs/en/about-claude/pricing). Pi reports it as an estimate, never as a subscription charge. Failed or interrupted requests are never reported as free.
 
 ## Comparison with pi-claude-bridge
 
 [pi-claude-bridge](https://github.com/elidickinson/pi-claude-bridge) is the closest alternative: both expose Claude as a Pi provider and let Pi execute provider tools. DirectSDK prioritizes request isolation and Pi-owned state. Bridge uses the official Agent SDK and adds optional delegation to Claude agents.
 
-This comparison covers DirectSDK 0.1.6 and [Bridge source at `b2e7255`](https://github.com/elidickinson/pi-claude-bridge/tree/b2e7255ece0b8bfd3a6429fd5c147fd59984c785), reviewed on October 13, 2026. It is a source and documentation comparison, not a head-to-head benchmark.
+This comparison was reviewed before the v0.1.7 release, when DirectSDK reported package version 0.1.6 on `main`. It compares that transport with [Bridge source at `b2e7255`](https://github.com/elidickinson/pi-claude-bridge/tree/b2e7255ece0b8bfd3a6429fd5c147fd59984c785), reviewed on October 13, 2026. It is a source and documentation comparison, not a head-to-head benchmark.
 
 | Dimension | DirectSDK | pi-claude-bridge |
 |---|---|---|
