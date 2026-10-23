@@ -172,7 +172,9 @@ test("streams a removed tool without rewriting the initial request prefix", asyn
       ["mcp__pi__beta", true],
     ],
   );
-  assert.ok(tools[0]?.["cache_control"]);
+  // Claude Code adds its own breakpoints; with the replay anchor, a tool
+  // breakpoint would exceed Anthropic's limit of four.
+  assert.equal(tools.some((tool) => "cache_control" in tool), false);
 
   const messages = seenBody["messages"] as Array<{ role: string; content: unknown }>;
   assert.deepEqual(messages.map((message) => message.role), [

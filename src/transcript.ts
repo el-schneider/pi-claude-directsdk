@@ -17,7 +17,6 @@ import {
 import type { Message, SystemMessage } from "@earendil-works/pi-ai/compat";
 import { TOOL_NAME_PREFIX, prepareTools, toolPrefixedName } from "./request.js";
 import { replayAssistantCount } from "./replay.js";
-import type { NativeCacheControl } from "./types.js";
 
 export const NATIVE_TOOL_CHANGES_BETA = "mid-conversation-tool-changes-2026-07-01";
 
@@ -69,7 +68,6 @@ function nativeSystemBlocks(message: SystemMessage): Array<Record<string, unknow
 export function prepareNativeTranscript(
   messages: Message[],
   supported: boolean,
-  cacheControl?: NativeCacheControl,
 ): NativeTranscriptPlan | undefined {
   const initial = getInitialSystemMessage(messages);
   const initialTools = initial?.toolsAdded ?? [];
@@ -90,12 +88,10 @@ export function prepareNativeTranscript(
     }
     return structuredClone(native);
   });
-  if (cacheControl && initialNative.length > 0) {
-    const last = initialNative[initialNative.length - 1];
-    if (last) {
-      last["cache_control"] = { ...cacheControl };
-    }
-  }
+  // No tool-level cache_control: Claude Code already sends two system
+  // breakpoints and a tail breakpoint, and replay adds a history anchor.
+  // Anthropic accepts at most four, so a tool breakpoint would reject every
+  // turn that has replayed history.
   const laterNative = declared
     .filter((tool) => !initialNames.has(tool.name))
     .map((tool) => {
