@@ -50,6 +50,7 @@
   "scripts": {
     "check": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
-    "test": "python3 scripts/verify.py startup"
+    "test": "node --experimental-strip-types --disable-warning=DEP0205 --import ./tests/register.mjs --test \"tests/*.test.ts\"",
+    "verify": "python3 scripts/verify.py startup"
   }
 }

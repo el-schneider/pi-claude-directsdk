@@ -14,8 +14,9 @@
 # The workflow file must exist on main first.
 # Requires npm CLI >= 11.5.1 and Node >= 22.14 in the publish job.
 #
-# CI checks types and compilation only. Runtime verification uses the
-# maintainer’s installed Pi and stays outside CI. See docs/testing.md.
+# CI checks types, compilation, and the offline regression suite. Runtime
+# verification uses the maintainer’s installed Pi and stays outside CI. See
+# docs/testing.md.
 
 name: Release
 
@@ -53,6 +54,7 @@ jobs:
         continue-on-error: true
         run: npm audit --audit-level=high
       - run: npm run check
+      - run: npm test
       - run: npm run build
 
   publish:

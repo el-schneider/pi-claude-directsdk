@@ -52,7 +52,7 @@ pi --model claude-directsdk/haiku
 
 DirectSDK uses the CLI login, not the Pi Anthropic login. The `npm install` flag enables the Claude Code installer for that command only.
 
-The model catalog does not guarantee account entitlement. Start with `haiku` for a small request. Models that require usage credits can incur separate charges. To use only the included subscription allowance, disable additional paid usage in your Claude account.
+The model catalog does not guarantee account entitlement. Start with `haiku` for a small request. Models that require usage credits can incur separate charges. DirectSDK stops a turn when Claude Code reports that it used usage credits, but it cannot undo the charge for that turn. To use only the included subscription allowance, disable additional paid usage in your Claude account. Set `CLAUDE_DIRECTSDK_ALLOW_USAGE_CREDITS=1` only when you intend to allow usage credits.
 
 ## Upgrade
 
@@ -82,13 +82,13 @@ Pi's per-model costs are estimates from [Anthropic pricing](https://platform.cla
 
 ## Comparison with other Claude providers
 
-Three extensions expose the Claude subscription through Claude Code while Pi owns the session. This table reflects DirectSDK 0.1.7, [pi-claude-bridge](https://github.com/elidickinson/pi-claude-bridge) 0.9.3, and [pi-claude-code](https://github.com/earendil-works/pi-claude-code) 0.1.0 (experimental) as of October 23, 2026.
+Three extensions expose the Claude subscription through Claude Code while Pi owns the session. This table reflects the current DirectSDK development branch, [pi-claude-bridge](https://github.com/elidickinson/pi-claude-bridge) 0.9.3, and [pi-claude-code](https://github.com/earendil-works/pi-claude-code) 0.1.0 (experimental) as of October 23, 2026.
 
 | | DirectSDK | pi-claude-bridge | pi-claude-code |
 |---|---|---|---|
-| Extra charges | No overage stop; usage-credit models are labeled in the catalog | No overage stop; 1M context Extra Usage is opt-in | Stops after an overage charge unless opted in |
+| Extra charges | Stops after an overage charge unless opted in | No overage stop; 1M context Extra Usage is opt-in | Stops after an overage charge unless opted in |
 | Tools | Pi executes; no delegation | Pi executes; optional AskClaude delegation, deprecated | Pi executes; no delegation |
-| Conversation | Fresh CLI and full history replay each call | Live Agent SDK query with a mirrored Claude session | Fresh CLI; warm reuse for text-only turns |
+| Conversation | Fresh CLI; full replay; tool changes on supported models | Live Agent SDK query with a mirrored Claude session | Fresh CLI; warm reuse for text-only turns |
 | Latency and cache | 99.6–99.8% cache-read share on warm turns | Query continues across tool calls; rebuilds miss the cache | Warm text turns skip startup; tool loops replay |
 | Models | CLI picker plus Anthropic docs, with verified prices | pi-ai Anthropic catalog, updated automatically | CLI discovery plus fallback metadata |
 
@@ -102,7 +102,7 @@ All three draw on the same subscription and can be affected by Anthropic billing
 - [Architecture](docs/architecture.md): request lifecycle diagram, model routing, tool transport, and admission relay.
 - [Startup](docs/startup.md): catalog refresh, cache-only initialization, and lazy loading.
 - [Troubleshooting](docs/troubleshooting.md): missing CLI, login, and conflicting environment settings.
-- [Testing](docs/testing.md): verified environments, offline checks, and paid replay scenarios. Offline startup was verified on Pi 1.3.0; paid conversation checks used Pi 1.2.0 and have not been repeated on 1.3.0.
+- [Testing](docs/testing.md): the offline regression suite, verified environments, and paid replay scenarios. Offline startup was verified on Pi 1.3.0; paid conversation checks used Pi 1.2.0 and have not been repeated on 1.3.0.
 - [Transport measurements](docs/transport-measurements.md): timing baseline, warm-cache reuse, and measurement limits.
 - [Full Bridge comparison](docs/comparison.md): transport, state, caching, authentication, and policy trade-offs.
 

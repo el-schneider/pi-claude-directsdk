@@ -16,7 +16,8 @@ import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { Socket } from "node:net";
-import { NativeAssistantMessage, NativeUsage, deepClone, isRecord } from "./types.js";
+import { deepClone, isRecord } from "./types.js";
+import type { NativeAssistantMessage, NativeUsage } from "./types.js";
 
 import { upstreamAgent } from "./upstream-agent.js";
 
@@ -154,6 +155,13 @@ export class SseCapture {
   }
 }
 
+export interface RelayRequestOptions {
+  /** Rewrite the admitted request body before it reaches the upstream. */
+  transformRequest?: ((body: Buffer) => Buffer) | undefined;
+  /** Extra `anthropic-beta` values for the admitted request. */
+  betas?: string[] | undefined;
+}
+
 export interface UpstreamTarget {
   scheme: "https:" | "http:";
   host: string;
@@ -227,6 +235,8 @@ export class AdmissionRelay {
   private readonly target: UpstreamTarget;
   private readonly timeoutMs: number;
   private readonly route: string;
+  private readonly transformRequest: ((body: Buffer) => Buffer) | undefined;
+  private readonly betas: string[];
   private cancelled = false;
   private sockets = new Set<Socket>();
   private activeUpstream: ClientRequest | null = null;
@@ -234,9 +244,15 @@ export class AdmissionRelay {
   private resolveReady!: () => void;
   private rejectReady!: (error: Error) => void;
 
-  private constructor(target: UpstreamTarget, timeoutMs: number) {
+  private constructor(
+    target: UpstreamTarget,
+    timeoutMs: number,
+    options: RelayRequestOptions,
+  ) {
     this.target = target;
     this.timeoutMs = timeoutMs;
+    this.transformRequest = options.transformRequest;
+    this.betas = options.betas ?? [];
     this.route = `/admit/${randomBytes(32).toString("base64url")}`;
     this.server = createServer((req, res) => {
       void this.handle(req, res);
@@ -266,8 +282,9 @@ export class AdmissionRelay {
   static async create(
     upstream: string,
     timeoutMs: number,
+    options: RelayRequestOptions = {},
   ): Promise<AdmissionRelay> {
-    const relay = new AdmissionRelay(parseUpstream(upstream), timeoutMs);
+    const relay = new AdmissionRelay(parseUpstream(upstream), timeoutMs, options);
     await relay.ready;
     const address = relay.server.address();
     if (address === null || typeof address === "string") {
@@ -380,6 +397,17 @@ export class AdmissionRelay {
       return;
     }
 
+    if (this.transformRequest) {
+      try {
+        body = this.transformRequest(body);
+      } catch (error) {
+        this.failure = error instanceof Error ? error.name : String(error);
+        res.writeHead(500, { "Content-Type": "application/json", Connection: "close" });
+        res.end(JSON.stringify({ type: "error", error: { type: "api_error", message: "Native request rewrite failed" } }));
+        return;
+      }
+    }
+
     try {
       await this.forward(req, res, body);
     } catch (error) {
@@ -437,6 +465,17 @@ export class AdmissionRelay {
         headers[key] = value;
       }
       headers["accept-encoding"] = "identity";
+      if (this.betas.length > 0) {
+        const existing = Array.isArray(headers["anthropic-beta"])
+          ? headers["anthropic-beta"].join(",")
+          : String(headers["anthropic-beta"] ?? "");
+        headers["anthropic-beta"] = [
+          ...new Set([
+            ...existing.split(",").map((value) => value.trim()).filter(Boolean),
+            ...this.betas,
+          ]),
+        ].join(",");
+      }
       const send =
         this.target.scheme === "https:" ? httpsRequest : httpRequest;
       const upstream = send(
