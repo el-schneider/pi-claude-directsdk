@@ -407,17 +407,12 @@ async function executeCall(
       body,
       manifest: build.manifest,
     });
-    relay = await deps.createRelay(upstream, timeoutMs, nativeTranscript
-      ? {
-          ...(nativeTranscript.systemInjections.length > 0
-            ? {
-                transformRequest: (body: Buffer) =>
-                  rewriteNativeSystemMessages(body, nativeTranscript.systemInjections),
-              }
-            : {}),
-          betas: [NATIVE_TOOL_CHANGES_BETA],
-        }
-      : undefined);
+    // Every request is rewritten to remove Claude Code's own message context.
+    const injections = nativeTranscript?.systemInjections ?? [];
+    relay = await deps.createRelay(upstream, timeoutMs, {
+      transformRequest: (body: Buffer) => rewriteNativeSystemMessages(body, injections),
+      ...(nativeTranscript ? { betas: [NATIVE_TOOL_CHANGES_BETA] } : {}),
+    });
     const activeRelay = relay;
     // Stashed at header time, invoked after the response completes and
     // before the completion gate consumes it, per the streamSimple contract.

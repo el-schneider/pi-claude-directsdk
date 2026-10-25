@@ -60,7 +60,7 @@ The child environment (`buildChildEnv`) points `ANTHROPIC_BASE_URL` at the relay
 
 ### Admission relay (`src/admission.ts`)
 
-The relay binds an ephemeral loopback port with a random per-request route (`/admit/<token>`). It forwards only the first upstream Messages request and rejects later native recovery or retry attempts locally with `PI_MODEL_ADMISSION_CONSUMED`. The relay changes HTTP transfer encoding. Request identity stays native. The transport may rewrite the request body for mid-conversation system messages and add beta values to `anthropic-beta`; the payload otherwise stays native.
+The relay binds an ephemeral loopback port with a random per-request route (`/admit/<token>`). It forwards only the first upstream Messages request and rejects later native recovery or retry attempts locally with `PI_MODEL_ADMISSION_CONSUMED`. The relay changes HTTP transfer encoding. Request identity stays native. The transport rewrites the request messages: it removes Claude Code's own message context (`src/native-context.ts`, see the [README](../README.md#native-context)) and adds mid-conversation system messages. It may add beta values to `anthropic-beta`. The system prompt blocks, `metadata`, and the other request fields stay native.
 
 The relay reconstructs the upstream assistant message from the SSE stream (`SseCapture`) and records status, request id, failure text, and an error body (capped at 64 KiB). Upstream targets must be HTTPS, except loopback HTTP endpoints. Request bodies are capped at 512 MiB.
 

@@ -8,6 +8,8 @@
 
 Use Claude inside Pi through the unmodified Claude Code executable. Pi owns the transcript, tools, approvals, and retries. The CLI supplies subscription authentication as a model transport.
 
+> This is a fork of [joaomj/pi-claude-directsdk](https://github.com/joaomj/pi-claude-directsdk). It removes the context that Claude Code adds to request messages, so the model sees the same messages as with Pi's other providers. See [Native context](#native-context). Install it from Git; the npm package is the upstream version.
+
 ## Requirements
 
 - Pi. The current maintainer installation is Pi 1.3.0; see [verification details](docs/testing.md#verified-environments).
@@ -30,16 +32,10 @@ Sign in through the official CLI login:
 claude auth login
 ```
 
-Install the extension from npm:
+Install the extension from Git:
 
 ```sh
-pi install npm:pi-claude-directsdk
-```
-
-Alternatively, install from Git. Choose one source, not both:
-
-```sh
-pi install git:github.com/joaomj/pi-claude-directsdk
+pi install git:github.com/el-schneider/pi-claude-directsdk
 ```
 
 Start or restart interactive Pi, open `/model`, and wait for the DirectSDK catalog refresh. Select a DirectSDK model. On a fresh install, this step must complete before selecting the model from the command line.
@@ -59,16 +55,28 @@ The model catalog does not guarantee account entitlement. Start with `haiku` for
 Update the source you installed:
 
 ```sh
-# npm installation
-pi update npm:pi-claude-directsdk
-
-# Git installation
-pi update git:github.com/joaomj/pi-claude-directsdk
+pi update git:github.com/el-schneider/pi-claude-directsdk
 ```
+
+The fork follows upstream through `scripts/sync-upstream.sh`: it rebases the fork commits onto upstream `main`, runs the checks and the message comparison, and pushes. The daily `Upstream check` workflow fails when upstream has commits the fork lacks.
 
 Run only the command for your source; `pi list` shows installed declarations. Version-pinned sources remain pinned when updated. To change a pin or switch sources, remove the old declaration with `pi remove <old-source>`, then install the desired source. Do not keep both npm and Git installations.
 
 Restart Pi after upgrading, then open `/model` and wait for catalog refresh.
+
+## Native context
+
+Claude Code adds its own context to the messages of every request:
+
+- A `system` message with `# Environment`. It names the child's private cache directory as the working directory, reports that directory's git state, and adds platform and model details.
+- A `system` message with the current date.
+- A `<system-reminder>` with sections such as `# userEmail`. It is a separate block on the first turn and is appended to the latest tool result or user text on later turns.
+
+Agents read this context as part of the task. The working directory and git state contradict the ones in Pi's system prompt. The relay removes this context before the request goes upstream. The system prompt blocks, `metadata`, and request parameters stay native: they carry the CLI's subscription routing and identity. Pi's other providers send no date either.
+
+A request fails with `NativeContextError` when the CLI adds a `<system-reminder>` block or `system` message in a shape the relay does not know. Update `src/native-context.ts` for the new CLI version.
+
+`node scripts/compare-messages.mjs` checks the result. It runs the same tool conversation through this provider and Pi's built-in Anthropic provider against a local fake endpoint, then compares the upstream messages. It makes no paid request.
 
 ## Cache improvements
 

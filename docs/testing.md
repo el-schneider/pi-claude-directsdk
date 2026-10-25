@@ -15,6 +15,9 @@ Run it on Node 22. The suite uses `node:test` and needs no subscription credenti
 - Conflicting auth and backend overrides are rejected without the test bypass.
 - The usage-credit guard stops an overage turn, permits it with `CLAUDE_DIRECTSDK_ALLOW_USAGE_CREDITS=1`, and marks the error non-retryable.
 - The tool-change plan emits deferred additions, removals, and assistant-boundary injections only when model metadata supports them.
+- The relay rewrite removes Claude Code's environment, date, and `<system-reminder>` context, moves cache breakpoints off removed content, and rejects unknown reminder shapes.
+
+`node scripts/compare-messages.mjs` compares upstream messages with Pi's built-in Anthropic provider through a local fake endpoint. It needs the real `claude` CLI login but makes no paid request. Run it after each Claude Code update.
 
 The tests use a temporary fake executable in the stream tests. They do not prove real Claude generation, native cache reuse, or upstream acceptance of the beta fields. The installed-Pi harness remains the end-to-end gate.
 

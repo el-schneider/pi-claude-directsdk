@@ -16,6 +16,7 @@ import {
 } from "@earendil-works/pi-ai/compat";
 import type { Message, SystemMessage } from "@earendil-works/pi-ai/compat";
 import { TOOL_NAME_PREFIX, prepareTools, toolPrefixedName } from "./request.js";
+import { stripNativeContext } from "./native-context.js";
 import { replayAssistantCount } from "./replay.js";
 
 export const NATIVE_TOOL_CHANGES_BETA = "mid-conversation-tool-changes-2026-07-01";
@@ -187,15 +188,14 @@ export function injectNativeSystemMessages(
   return output;
 }
 
-/** Apply system injections to a native Messages request body. */
+/** Replace Claude Code context with Pi system injections in a native Messages request body. */
 export function rewriteNativeSystemMessages(
   body: Buffer,
   injections: NativeSystemInjection[],
 ): Buffer {
   const payload = JSON.parse(body.toString("utf8")) as { messages?: unknown };
-  if (!Array.isArray(payload.messages)) {
-    throw new Error("Native request is missing its messages array");
-  }
+  // Strip first: the injections below are Pi's own system messages.
+  stripNativeContext(payload);
   payload.messages = injectNativeSystemMessages(
     payload.messages as NativeRequestMessage[],
     injections,
