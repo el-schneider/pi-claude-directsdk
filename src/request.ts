@@ -155,7 +155,17 @@ export interface PreparedTools {
   toolNames: string[];
 }
 
-const TOOL_NAME_PATTERN = /^[A-Za-z0-9_-]{1,50}$/;
+/**
+ * Messages API limit for a tool name (`^[a-zA-Z0-9_-]{1,128}$`). It applies to
+ * the native name, which carries `TOOL_NAME_PREFIX`, so bare Pi names get the
+ * rest. Measured with Claude Code 2.1.300: a 128-character native name round-
+ * trips; 129 returns `tools.N.custom.name: String should have at most 128
+ * characters`.
+ */
+const MAX_NATIVE_TOOL_NAME_LENGTH = 128;
+const TOOL_NAME_PATTERN = new RegExp(
+  `^[A-Za-z0-9_-]{1,${MAX_NATIVE_TOOL_NAME_LENGTH - TOOL_NAME_PREFIX.length}}$`,
+);
 
 /** Validate Pi tools and build their native declarations and inert manifest. */
 export function prepareTools(tools: Tool[]): PreparedTools {
@@ -167,7 +177,9 @@ export function prepareTools(tools: Tool[]): PreparedTools {
   for (const tool of tools) {
     const name = tool.name;
     if (typeof name !== "string" || !TOOL_NAME_PATTERN.test(name)) {
-      throw new Error(`Tool names must be unique ASCII identifiers of at most 50 characters: ${name}`);
+      throw new Error(
+        `Tool names must be ASCII identifiers of at most ${MAX_NATIVE_TOOL_NAME_LENGTH - TOOL_NAME_PREFIX.length} characters: ${name}`,
+      );
     }
     if (seen.has(name)) {
       throw new Error(`Duplicate tool name: ${name}`);
