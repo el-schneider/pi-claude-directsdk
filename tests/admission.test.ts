@@ -66,3 +66,37 @@ test("admits one upstream request and applies the tool-change beta and rewrite",
   assert.equal(relay.used, true);
   assert.equal(relay.denied, 1);
 });
+
+// Anthropic reports mid-stream failures (e.g. overloaded_error) as an SSE `error`
+// event inside an HTTP 200 response. The capture must keep that reason so the
+// provider can surface it (and Pi can classify it as retryable) instead of a
+// bare "capture incomplete".
+test("keeps the upstream error event of a 200 stream", async (t) => {
+  const upstream = createServer((request, response) => {
+    request.resume();
+    request.on("end", () => {
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      response.end(
+        'event: message_start\ndata: {"type":"message_start","message":{"role":"assistant","content":[],"usage":{"input_tokens":1,"output_tokens":1}}}\n\n' +
+          'event: error\ndata: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}\n\n',
+      );
+    });
+  });
+  await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise<void>((resolve) => upstream.close(() => resolve())));
+  const address = upstream.address();
+  assert.ok(address && typeof address !== "string");
+  const relay = await AdmissionRelay.create(`http://127.0.0.1:${address.port}`, 5_000);
+  t.after(() => relay.close());
+
+  const response = await fetch(`${relay.url}/v1/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ messages: [] }),
+  });
+  assert.equal(response.status, 200);
+  await response.text();
+  assert.equal(relay.capture.complete, false);
+  assert.equal(relay.capture.streamError, "overloaded_error: Overloaded");
+  assert.match(relay.errorText(), /overloaded_error: Overloaded/);
+});

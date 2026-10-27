@@ -728,6 +728,10 @@ async function executeCall(
         throw upstreamError(
           `first upstream attempt: status ${relay.status ?? "unknown"}, ` +
             `capture ${relay.capture.complete ? "complete" : "incomplete"}` +
+            // Wording matches Pi's transient-error classifier, so a truncated stream is retried.
+            (relay.status === 200 && !relay.capture.complete && !relay.capture.streamError
+              ? ", stream ended before message_stop"
+              : "") +
             (relay.failure ? `, relay failure ${relay.failure}` : "") +
             `, native retries denied: ${relay.denied}` +
             (relay.errorText() ? `, upstream said: ${relay.errorText().slice(0, 500)}` : "") +

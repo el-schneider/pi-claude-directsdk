@@ -28,6 +28,8 @@ const REQUEST_BODY_CAP = 512 * 1024 * 1024;
 export class SseCapture {
   message: NativeAssistantMessage | null = null;
   complete = false;
+  /** `type: message` of an SSE `error` event; Anthropic sends these inside HTTP 200 streams. */
+  streamError: string | null = null;
   private pending = "";
   private decoder = new TextDecoder();
   private arguments: Map<number, string> = new Map();
@@ -70,9 +72,19 @@ export class SseCapture {
       case "message_stop":
         this.onStop();
         break;
+      case "error":
+        this.onError(event);
+        break;
       default:
         break;
     }
+  }
+
+  private onError(event: Record<string, unknown>): void {
+    const error = isRecord(event["error"]) ? event["error"] : {};
+    const type = typeof error["type"] === "string" ? error["type"] : "error";
+    const message = typeof error["message"] === "string" ? error["message"] : "";
+    this.streamError = message ? `${type}: ${message}` : type;
   }
 
   private onStart(event: Record<string, unknown>): void {
@@ -295,8 +307,11 @@ export class AdmissionRelay {
     return relay;
   }
 
-  /** The upstream's own message for a non-200 answer, "" when none was captured. */
+  /** The upstream's own message: a non-200 body or a 200 stream's SSE error event; "" when none was captured. */
   errorText(): string {
+    if (this.capture.streamError) {
+      return this.capture.streamError;
+    }
     const text = this.errorBody.toString("utf-8");
     try {
       const message = (JSON.parse(text) as Record<string, unknown>)["error"] as Record<
