@@ -426,7 +426,7 @@ export class AdmissionRelay {
     try {
       await this.forward(req, res, body);
     } catch (error) {
-      this.failure = error instanceof Error ? error.name : String(error);
+      this.failure = describeTransportFailure(error);
       if (!res.headersSent) {
         res.writeHead(502, { Connection: "close" });
       }
@@ -588,6 +588,24 @@ export class AdmissionRelay {
       upstream.end(body);
     });
   }
+}
+
+/**
+ * Names a forward failure with its code and message, not only its class: Pi's retry classifier recognises
+ * transport errors by wording such as "connection error", "ECONNRESET" or "socket hang up", and a bare
+ * "AggregateError" (Node's failed connect to every resolved address) matches none of them.
+ */
+export function describeTransportFailure(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return `connection error: ${String(error)}`;
+  }
+  const parts = [error.name];
+  const code = (error as NodeJS.ErrnoException).code;
+  if (code) parts.push(code);
+  const inner = error instanceof AggregateError ? error.errors : [];
+  const messages = [error.message, ...inner.map((item) => (item instanceof Error ? item.message : String(item)))]
+    .filter((message) => message !== "");
+  return `connection error (${parts.join(" ")}${messages.length ? `: ${messages.join("; ").slice(0, 300)}` : ""})`;
 }
 
 function readBody(req: IncomingMessage, cap: number): Promise<Buffer> {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
-import { AdmissionRelay } from "../src/admission.ts";
+import { AdmissionRelay, describeTransportFailure } from "../src/admission.ts";
 import { NATIVE_TOOL_CHANGES_BETA } from "../src/transcript.ts";
 
 test("admits one upstream request and applies the tool-change beta and rewrite", async (t) => {
@@ -65,6 +65,32 @@ test("admits one upstream request and applies the tool-change beta and rewrite",
   assert.equal(upstreamRequests, 1);
   assert.equal(relay.used, true);
   assert.equal(relay.denied, 1);
+});
+
+// Transport failures must be described in words Pi's retry classifier knows (it matches
+// "connection error", "ECONNRESET", "socket hang up", ...); a bare class name is not retried.
+test("describes transport failures so Pi retries them", async (t) => {
+  const upstream = createServer((request) => {
+    request.socket.destroy();
+  });
+  await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise<void>((resolve) => upstream.close(() => resolve())));
+  const address = upstream.address();
+  assert.ok(address && typeof address !== "string");
+  const relay = await AdmissionRelay.create(`http://127.0.0.1:${address.port}`, 5_000);
+  t.after(() => relay.close());
+
+  const response = await fetch(`${relay.url}/v1/messages`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ messages: [] }),
+  });
+  await response.text();
+  assert.equal(response.status, 502);
+  assert.match(relay.failure ?? "", /^connection error \(Error ECONNRESET/);
+
+  const aggregate = new AggregateError([new Error("connect ETIMEDOUT 1.2.3.4:443")], "");
+  assert.equal(describeTransportFailure(aggregate), "connection error (AggregateError: connect ETIMEDOUT 1.2.3.4:443)");
 });
 
 // Anthropic reports mid-stream failures (e.g. overloaded_error) as an SSE `error`
