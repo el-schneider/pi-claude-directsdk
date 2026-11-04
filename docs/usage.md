@@ -66,6 +66,8 @@ Pi's default `<docs>` section names Pi's documentation files, so it is refused. 
 
 While a DirectSDK model is active the extension replaces that section with a one-line pointer. Other providers keep Pi's prompt, and a custom or forced prompt is left alone because it has no Pi sections to change.
 
+An extension that returns `systemPrompt` from `before_agent_start` forces the whole prompt, and Pi renders that text before this provider can swap the section. The fork (el-schneider) refuses such a turn before Claude Code starts and names the cause, instead of letting Anthropic answer with the extra-usage error above. Extensions should edit `event.systemPromptOptions` (a custom `sections` entry or `appendSystemPrompt`) instead.
+
 The accepted wording is undocumented and can change. After a Pi or Claude Code update, send one real turn from an interactive session; a short prompt does not test this, because it is accepted even when Pi's full prompt is refused. See [Testing](testing.md).
 
 ## Plan usage metering

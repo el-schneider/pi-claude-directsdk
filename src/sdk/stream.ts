@@ -45,6 +45,8 @@ import {
   DirectSdkError,
   cancelledError,
   envConflictError,
+  harnessPromptError,
+  PI_DOCS_MARKER,
   incompleteError,
   loggedOutError,
   nativeError,
@@ -820,6 +822,7 @@ async function executeCall(
     const tools = options.toolChoice === "none" ? [] : getCurrentTools(context.messages);
     const specs = prepareToolSpecs(tools);
     const append = getCurrentSystemPrompt(collapseSystemMessages(context).messages);
+    if (append.includes(PI_DOCS_MARKER)) throw harnessPromptError();
     const reasoning = options.reasoning;
     const backing = reasoning ? model.thinkingLevelMap?.[reasoning] : undefined;
     const effort = toEffort(backing);

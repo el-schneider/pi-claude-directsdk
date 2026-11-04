@@ -67,9 +67,9 @@ function readTool(): Tool {
   };
 }
 
-function context(messages: unknown[], tools: Tool[] = []): ReturnType<typeof normalizeContext> {
+function context(messages: unknown[], tools: Tool[] = [], systemPrompt = SYSTEM_PROMPT): ReturnType<typeof normalizeContext> {
   return normalizeContext({
-    systemPrompt: SYSTEM_PROMPT,
+    systemPrompt,
     tools,
     messages: messages as never,
   });
@@ -85,11 +85,12 @@ function call(
     signal?: AbortSignal;
     sessionId?: string;
     reasoning?: string;
+    systemPrompt?: string;
   } = {},
 ): AssistantMessageEventStream {
   return streamClaudeDirectSdk(
     model(),
-    context(messages, options.tools ?? []),
+    context(messages, options.tools ?? [], options.systemPrompt),
     {
       timeoutMs: options.timeoutMs ?? 2_000,
       sessionId: options.sessionId ?? "conversation",
@@ -532,6 +533,15 @@ test("a reply that talks about billing is still a success", async () => {
     done.content.map((block) => (block.type === "text" ? block.text : "")).join(""),
     /third-party apps/,
   );
+});
+
+test("a prompt that still carries Pi's docs routing fails before Claude Code starts", async () => {
+  const { fake, deps } = harness();
+  // What Pi sends when another extension forced the prompt before the docs swap.
+  const forced = `${SYSTEM_PROMPT}\n<docs>\nPi documentation (read only when the user asks about the harness itself, its SDK):\n</docs>`;
+  const message = failure(await collect(call(deps, [userText("hello")], { systemPrompt: forced })));
+  assert.match(message.errorMessage ?? "", /systemPromptOptions/);
+  assert.equal(fake.queries.length, 0, "no Claude Code session may start with the harness prompt");
 });
 
 test("a silent Claude Code fails the turn instead of hanging Pi", async () => {

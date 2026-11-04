@@ -62,6 +62,24 @@ export function sdkError(detail: string, options?: ErrorOptions): DirectSdkError
   return new DirectSdkError("sdk", `Claude Code transport: ${detail}`, options);
 }
 
+/**
+ * First line of Pi's default `<docs>` section. Anthropic reads that routing as
+ * another agent harness and bills the turn as third-party extra usage. The
+ * extension swaps the section for a pointer; it survives only when another
+ * extension forced the whole prompt before the swap could apply.
+ */
+export const PI_DOCS_MARKER = "Pi documentation (read only when the user asks about";
+
+export function harnessPromptError(): DirectSdkError {
+  return new DirectSdkError(
+    "native",
+    "Pi's documentation section is still in the system prompt, so Anthropic would bill this turn as " +
+      "third-party extra usage. Another extension returned `systemPrompt` from before_agent_start, which " +
+      "forces the whole prompt and stops this provider from replacing the section. Change that extension " +
+      "to edit `event.systemPromptOptions` (sections or appendSystemPrompt) instead.",
+  );
+}
+
 /** A tool call could not be attributed or delivered to Pi. */
 export function toolError(detail: string): DirectSdkError {
   return new DirectSdkError("tool", `Pi tool bridge: ${detail}`);
