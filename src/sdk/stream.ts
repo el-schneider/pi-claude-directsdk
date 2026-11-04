@@ -39,7 +39,8 @@ import {
   usageCreditsRejectionError,
   type RateLimitInfo,
 } from "../billing.js";
-import { buildChildEnv, checkEnvConflicts, COMMAND_ENV } from "../env.js";
+import { buildChildEnv, checkEnvConflicts, COMMAND_ENV, relayUpstream } from "../env.js";
+import { relayUrl } from "../relay.js";
 import {
   DirectSdkError,
   cancelledError,
@@ -125,6 +126,8 @@ export function closeAllSessions(): void {
 export interface CallDeps {
   loadRuntime: () => Promise<SdkRuntime>;
   resolveCli: (env: NodeJS.ProcessEnv) => string[] | undefined;
+  /** Base URL of the loopback relay that forwards to `upstream`. */
+  relayUrl: (upstream: string) => Promise<string>;
   cwd: () => string;
   sessions: SessionRegistry;
 }
@@ -132,6 +135,7 @@ export interface CallDeps {
 export const defaultDeps: CallDeps = {
   loadRuntime,
   resolveCli: (env) => resolveClaude(env[COMMAND_ENV], env),
+  relayUrl,
   cwd: () => process.cwd(),
   sessions,
 };
@@ -811,6 +815,7 @@ async function executeCall(
       );
     }
     const runtime = await deps.loadRuntime();
+    const relay = await deps.relayUrl(relayUpstream(mergedEnv));
 
     const tools = options.toolChoice === "none" ? [] : getCurrentTools(context.messages);
     const specs = prepareToolSpecs(tools);
@@ -828,7 +833,7 @@ async function executeCall(
       effort,
       append,
       specs,
-      env: buildChildEnv(mergedEnv),
+      env: buildChildEnv(mergedEnv, relay),
       context,
       signal: options.signal,
     });

@@ -67,6 +67,8 @@ A failed call drops the session, because its state after the failure is unknown.
 | `src/provider.ts` | Catalog state, refresh lifecycle, and the Pi-facing stream factory |
 | `src/lazy-stream.ts` | Defers the SDK import until the first request |
 | `src/env.ts` | The only reader of the launching environment; guards, child environment |
+| `src/relay.ts` | Loopback relay that strips Claude Code's context from Messages requests (fork) |
+| `src/native-context.ts` | Recognises and removes that context (fork) |
 | `src/sdk/stream.ts` | Session registry, one Pi turn, frame to event conversion |
 | `src/sdk/session.ts` | One streaming-input query, frame deadlines, cancellation, close |
 | `src/sdk/options.ts` | Isolation options for the child |
@@ -97,7 +99,17 @@ Every session starts with `tools: []`, so Claude Code has no native tool; `setti
 `src/env.ts` is the only place that reads the launching environment.
 
 - `checkEnvConflicts` rejects `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_FOUNDRY_API_KEY`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, and `CLAUDE_CODE_USE_FOUNDRY`, because any of them would silently move the request to another billing route. `PI_DIRECTSDK_TEST_UPSTREAM=1` is the documented bypass for loopback fixtures.
-- `buildChildEnv` maps `CLAUDE_DIRECTSDK_CONFIG_DIR` to `CLAUDE_CONFIG_DIR`, deletes `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_MAX_RETRIES`, and `CLAUDE_CODE_ENTRYPOINT`, and sets `DISABLE_AUTO_COMPACT`, `DISABLE_COMPACT`, and `CLAUDE_CODE_TOTAL_TOKENS_REMINDER=off`. The SDK supplies the session label.
+- `buildChildEnv` maps `CLAUDE_DIRECTSDK_CONFIG_DIR` to `CLAUDE_CONFIG_DIR`, points `ANTHROPIC_BASE_URL` at the [native-context relay](#native-context-relay), deletes `CLAUDE_CODE_MAX_RETRIES` and `CLAUDE_CODE_ENTRYPOINT`, and sets `DISABLE_AUTO_COMPACT`, `DISABLE_COMPACT`, and `CLAUDE_CODE_TOTAL_TOKENS_REMINDER=off`. The SDK supplies the session label.
+
+### Native-context relay
+
+This section is specific to the [el-schneider fork](https://github.com/el-schneider/pi-claude-directsdk).
+
+Claude Code adds its own context to the request messages, and the Agent SDK has no option to turn it off: `<system-reminder>` blocks with `# Environment` (working directory, git state, platform), the model name, the date, and a `# userEmail` / `# gitStatus` section; for models with mid-conversation system messages, a `role: "system"` message with the same sections. Agents read this context as part of the task, and it contradicts or duplicates what Pi's own system prompt says.
+
+`src/relay.ts` is a loopback HTTP server on a random path. The child reaches the API only through it. For each `POST /v1/messages` it calls `stripNativeContext` (`src/native-context.ts`), then forwards the request with the CLI's own headers; every other request and every response pass through unchanged. The system prompt blocks, `metadata`, and request parameters are not touched, because they carry the CLI's subscription routing and identity. A cache breakpoint on removed content moves to the content before it.
+
+A context block or system message in an unknown format fails the request with a 400 that names it, and is never forwarded unstripped. Connection failures are mirrored to the child, so Claude Code retries and reports them as it does without the relay. `scripts/compare-messages.mjs` checks that the messages match Pi's built-in Anthropic provider for the same conversation.
 
 ### Session lifecycle
 
@@ -107,7 +119,7 @@ A frame deadline limits one phase, not the whole turn. Cancellation asks the que
 
 ### Tool bridge
 
-Pi tools are exposed as one MCP server named `pi`, so Claude Code sees `mcp__pi__<name>`. The server is a plain MCP `Server` with JSON-Schema definitions; top-level `oneOf`, `allOf`, and `anyOf` are dropped because Claude's validator rejects them, and a nullable `type` array collapses to its non-null member. Tool names are 1 to 50 characters of letters, digits, `_`, or `-`. A tool whose constrained sampling requires strict enforcement is rejected rather than silently unenforced.
+Pi tools are exposed as one MCP server named `pi`, so Claude Code sees `mcp__pi__<name>`. The server is a plain MCP `Server` with JSON-Schema definitions; top-level `oneOf`, `allOf`, and `anyOf` are dropped because Claude's validator rejects them, and a nullable `type` array collapses to its non-null member. Tool names are 1 to 119 characters of letters, digits, `_`, or `-`, so the prefixed name fits the Messages API limit of 128. A tool whose constrained sampling requires strict enforcement is rejected rather than silently unenforced.
 
 A tool never executes in the MCP handler. The handler parks in the bridge and waits for Pi.
 

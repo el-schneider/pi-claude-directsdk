@@ -51,6 +51,19 @@ export function checkEnvConflicts(env: NodeJS.ProcessEnv): string[] {
   return conflicts;
 }
 
+/** The Anthropic API the relay forwards to. */
+export const DEFAULT_UPSTREAM = "https://api.anthropic.com";
+
+/**
+ * Where the relay forwards Claude Code's requests. Only test mode may point it
+ * at a loopback fixture through `ANTHROPIC_BASE_URL`; subscription mode always
+ * talks to the Anthropic API.
+ */
+export function relayUpstream(env: NodeJS.ProcessEnv): string {
+  const override = env["ANTHROPIC_BASE_URL"];
+  return isTruthy(env[TEST_UPSTREAM_ENV]) && override ? override : DEFAULT_UPSTREAM;
+}
+
 /**
  * Child environment for the SDK-spawned Claude Code process.
  *
@@ -59,15 +72,16 @@ export function checkEnvConflicts(env: NodeJS.ProcessEnv): string[] {
  * Pi's responsibilities is disabled here; Pi's own provider handles compaction,
  * memory, and retries.
  */
-export function buildChildEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function buildChildEnv(baseEnv: NodeJS.ProcessEnv, relayBaseUrl: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...baseEnv };
   const config = env[CONFIG_DIR_ENV];
   delete env[CONFIG_DIR_ENV];
   if (config) {
     env["CLAUDE_CONFIG_DIR"] = config;
   }
-  // No relay: the SDK transport talks to the provider directly.
-  delete env["ANTHROPIC_BASE_URL"];
+  // Requests go through the loopback relay, which strips Claude Code's own
+  // context from the messages (src/relay.ts).
+  env["ANTHROPIC_BASE_URL"] = relayBaseUrl;
   // Claude Code owns request-level retries in this transport.
   delete env["CLAUDE_CODE_MAX_RETRIES"];
   env["CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"] = "1";

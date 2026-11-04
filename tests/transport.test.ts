@@ -48,6 +48,7 @@ function harness(): { fake: FakeClaude; deps: CallDeps } {
   const deps: CallDeps = {
     loadRuntime: async () => fake,
     resolveCli: () => ["/fake/claude"],
+    relayUrl: async (upstream) => `http://127.0.0.1:1/relay?upstream=${upstream}`,
     cwd: () => "/fake/work",
     sessions: new SessionRegistry(),
   };
@@ -178,6 +179,8 @@ test("streams one answer with usage, and isolates Claude Code from its own tools
   assert.equal(systemPrompt.type, "preset");
   assert.equal(systemPrompt.append, SYSTEM_PROMPT);
   assert.match(query.users[0] ?? "", /hello/);
+  // Claude Code reaches the API only through the context-stripping relay.
+  assert.equal(query.options.env?.["ANTHROPIC_BASE_URL"], "http://127.0.0.1:1/relay?upstream=https://api.anthropic.com");
 });
 
 test("drops the signature-only reasoning block Claude Code sends for encrypted thinking", async () => {

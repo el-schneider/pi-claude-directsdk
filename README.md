@@ -1,5 +1,7 @@
 # Pi Claude DirectSDK
 
+> This is a fork of [joaomj/pi-claude-directsdk](https://github.com/joaomj/pi-claude-directsdk). It removes the context that Claude Code adds to request messages (environment, git status, date, account email), so the model sees the same messages as with Pi's other providers, and it accepts tool names up to the API limit of 128 characters. See [Native-context relay](docs/architecture.md#native-context-relay). Install it from Git; the npm package is the upstream version.
+
 [![CI](https://github.com/joaomj/pi-claude-directsdk/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/joaomj/pi-claude-directsdk/actions/workflows/ci.yml?query=branch%3Amain)
 [![npm version](https://img.shields.io/npm/v/pi-claude-directsdk.svg)](https://www.npmjs.com/package/pi-claude-directsdk)
 [![License](https://img.shields.io/github/license/joaomj/pi-claude-directsdk)](LICENSE)
@@ -24,11 +26,10 @@ Sign in through the official CLI:
 claude auth login
 ```
 
-Install the extension from npm, or from Git instead, but not both:
+Install the extension from Git:
 
 ```sh
-pi install npm:pi-claude-directsdk
-pi install git:github.com/joaomj/pi-claude-directsdk  # alternative source
+pi install git:github.com/el-schneider/pi-claude-directsdk
 ```
 
 Start or restart interactive Pi, open `/model`, and wait for the DirectSDK catalog refresh. On a fresh install, this step must complete before selecting the model from the command line; later invocations can use the saved catalog, for example `pi --model claude-directsdk/haiku`.
@@ -64,9 +65,10 @@ npm run smoke          # two real model calls against your own Claude Code login
 ## Upgrade
 
 ```sh
-pi update npm:pi-claude-directsdk                              # npm installation
-pi update git:github.com/joaomj/pi-claude-directsdk            # Git installation
+pi update git:github.com/el-schneider/pi-claude-directsdk
 ```
+
+The fork follows upstream through `scripts/sync-upstream.sh`: it rebases the fork commits onto upstream `main`, runs the checks and the message comparison, and pushes. The daily `Upstream check` workflow fails when upstream has commits the fork lacks.
 
 Run only the command for your source; `pi list` shows installed declarations. Version-pinned sources remain pinned when updated, so change a pin or switch sources with `pi remove <old-source>` and a fresh install. Restart Pi afterwards, then open `/model` and wait for catalog refresh.
 
