@@ -14,7 +14,14 @@ import { isRecord } from "../types.js";
 export const MCP_SERVER_NAME = "pi";
 export const TOOL_NAME_PREFIX = `mcp__${MCP_SERVER_NAME}__`;
 
-const TOOL_NAME_PATTERN = /^[A-Za-z0-9_-]{1,50}$/;
+/**
+ * Messages API limit for a tool name (`^[a-zA-Z0-9_-]{1,128}$`). It applies to
+ * the name Claude sees, which carries `TOOL_NAME_PREFIX`, so bare Pi names get
+ * the rest. Measured with Claude Code 2.1.300: a 128-character name round-trips.
+ */
+const MAX_NATIVE_TOOL_NAME_LENGTH = 128;
+const MAX_TOOL_NAME_LENGTH = MAX_NATIVE_TOOL_NAME_LENGTH - TOOL_NAME_PREFIX.length;
+const TOOL_NAME_PATTERN = new RegExp(`^[A-Za-z0-9_-]{1,${MAX_TOOL_NAME_LENGTH}}$`, "u");
 const BANNED_TOP_LEVEL = ["oneOf", "allOf", "anyOf"] as const;
 
 export function toolPrefixedName(bare: string): string {
@@ -73,7 +80,7 @@ export function prepareToolSpecs(tools: Tool[]): PiToolSpec[] {
   for (const tool of tools) {
     const name = tool.name;
     if (typeof name !== "string" || !TOOL_NAME_PATTERN.test(name)) {
-      throw new Error(`Tool names must be unique ASCII identifiers of at most 50 characters: ${name}`);
+      throw new Error(`Tool names must be ASCII identifiers of at most ${MAX_TOOL_NAME_LENGTH} characters: ${name}`);
     }
     if (seen.has(name)) {
       throw new Error(`Duplicate tool name: ${name}`);
