@@ -337,6 +337,8 @@ export function apiErrorFrame(text: string, requestId = "req_abc123"): SDKMessag
 /** The messages one test query received and the frames the test fed it. */
 export class FakeQuery {
   readonly users: string[] = [];
+  /** The user frames exactly as the transport sent them. */
+  readonly userFrames: SDKUserMessage[] = [];
   readonly emitted: SDKMessage[] = [];
   interrupted = false;
   closed = false;
@@ -415,6 +417,7 @@ export class FakeQuery {
     try {
       for await (const message of prompt) {
         this.users.push(textOfUser(message));
+        this.userFrames.push(message);
         for (const waiter of this.userWaiters.splice(0)) waiter();
       }
     } catch {

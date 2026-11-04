@@ -101,6 +101,9 @@ export class ClaudeSession {
     this.input.push({
       type: "user",
       parent_tool_use_id: null,
+      // Pi composed this text. Without the flag Claude Code expands `@path`
+      // mentions itself and injects a synthetic Bash or Read call with its result.
+      client_composed: true,
       message: { role: "user", content: blocks },
     } as unknown as SDKUserMessage);
   }

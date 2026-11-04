@@ -89,6 +89,8 @@ export function buildChildEnv(baseEnv: NodeJS.ProcessEnv, relayBaseUrl: string):
   env["DISABLE_COMPACT"] = "1";
   // Pi owns budgets; a native replayed reminder would invalidate the prompt prefix.
   env["CLAUDE_CODE_TOTAL_TOKENS_REMINDER"] = "off";
+  // Pi owns turn pacing; the "user hasn't heard from you" nudge is not Pi's prompt.
+  env["CLAUDE_CODE_SILENT_TURN_REMINDER"] = "0";
   // The SDK labels the session; a custom label is deliberately not carried over.
   delete env["CLAUDE_CODE_ENTRYPOINT"];
   return env;

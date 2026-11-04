@@ -181,6 +181,9 @@ test("streams one answer with usage, and isolates Claude Code from its own tools
   assert.match(query.users[0] ?? "", /hello/);
   // Claude Code reaches the API only through the context-stripping relay.
   assert.equal(query.options.env?.["ANTHROPIC_BASE_URL"], "http://127.0.0.1:1/relay?upstream=https://api.anthropic.com");
+  // Claude Code must not add its own messages: no `@path` expansion, no silent-turn nudge.
+  assert.equal((query.userFrames[0] as { client_composed?: unknown }).client_composed, true);
+  assert.equal(query.options.env?.["CLAUDE_CODE_SILENT_TURN_REMINDER"], "0");
 });
 
 test("drops the signature-only reasoning block Claude Code sends for encrypted thinking", async () => {
