@@ -904,7 +904,17 @@ async function executeCall(
           // the provider's text in a synthetic assistant message. That text is
           // the only explanation the user gets, so it becomes the error.
           const apiText = record["is_api_error_message"] === true ? apiErrorText(message) : "";
-          if (apiText) throw sdkError(withRequestId(apiText, requestId));
+          if (apiText) {
+            const detail = withRequestId(apiText, requestId);
+            if (
+              /not logged in/i.test(apiText) ||
+              errorCode === "authentication_failed" ||
+              errorCode === "oauth_org_not_allowed"
+            ) {
+              throw loggedOutError(detail);
+            }
+            throw sdkError(detail);
+          }
           throw assistantFailure(errorCode, model, session.stderr());
         }
         renderer.assistant(message);

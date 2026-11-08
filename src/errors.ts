@@ -33,8 +33,11 @@ export const LOGIN_HINT =
   "Run `claude auth login`, then select this provider again.";
 
 export const LOGGED_OUT_HINT =
-  "Claude Code is installed but has no usable login in the environment Pi runs it in. " +
-  "Run `claude auth login` as the user Pi runs as, " +
+  "Claude Code credentials are missing or inaccessible in the environment Pi runs it in. " +
+  "On macOS, a locked login keychain can cause this even when you are already logged in. " +
+  "Unlock it in Keychain Access or run `security unlock-keychain \"$HOME/Library/Keychains/login.keychain-db\"` " +
+  "in a local terminal, then check `claude auth status` and retry. " +
+  "If credentials are still unavailable, run `claude auth login` as the user Pi runs as, " +
   "set CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) in Pi's environment, " +
   "or point CLAUDE_DIRECTSDK_CONFIG_DIR at a logged-in config directory, then try again.";
 

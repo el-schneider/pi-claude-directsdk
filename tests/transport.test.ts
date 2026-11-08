@@ -590,6 +590,24 @@ test("an API rejection carries the upstream request id in the error and the log"
   assert.equal(line.requestId, "req_abc123");
 });
 
+test("a native login error explains inaccessible credentials without claiming the login expired", async () => {
+  const log = tmpLog("login");
+  const { fake, deps } = harness();
+  const events = collect(call(deps, [userText("hello")], { env: { [LOG_ENV]: log } }));
+  const query = await fake.nextQuery();
+  await query.waitForUsers(1);
+  query.emit(apiErrorFrame("Not logged in · Please run /login"));
+
+  const message = failure(await events);
+  assert.match(message.errorMessage ?? "", /missing or inaccessible/);
+  assert.match(message.errorMessage ?? "", /locked login keychain/);
+  assert.match(message.errorMessage ?? "", /security unlock-keychain/);
+  assert.match(message.errorMessage ?? "", /claude auth status/);
+  assert.match(message.errorMessage ?? "", /Not logged in · Please run \/login/);
+  assert.match(message.errorMessage ?? "", /request id req_abc123/);
+  assert.equal(JSON.parse(readFileSync(log, "utf8").trim()).kind, "logged-out");
+});
+
 test("the log rotates instead of growing without bound", () => {
   const log = tmpLog("rotate");
   writeFileSync(log, "x".repeat(1024 * 1024));
